@@ -1,1 +1,13 @@
+OAUTH STATE loaded: 1 clients, 0 refresh tokens
+◇ injected env (11) from .env // tip: ⌘ enable debugging { debug: true }
 Master Hive MCP server listening on :3939
+AUTHORIZE query: {"client_id":"hive-df18d860db6b4b565a342fbf","redirect_uri":"https://example.com/callback","state":"abc","code_challenge":"abc","code_challenge_method":"S256"}
+AUTHORIZE OK, redirecting to CF, ourState: 02bb64cfb032dc38774c2e2a2671390e
+REGISTER: {"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"token_endpoint_auth_method":"client_secret_post","grant_types":["authorization_code","refresh_token"],"response_types":["code"],"client_name":"Claude","application_type":"web"} -> issued hive-2eb87b14c06320226e1c3cab
+AUTHORIZE query: {"response_type":"code","client_id":"hive-2eb87b14c06320226e1c3cab","redirect_uri":"https://claude.ai/api/mcp/auth_callback","code_challenge":"lR4XTInEuaZFjz1q8T_XsPmG1_R-_gbDvPBAjLrJnt4","code_challenge_method":"S256","state":"bfuOQIqbYcRlT1xVwPtsoSgyAOvJrPIs3Kbi3ynLXNM","resource":"https://hive.incendiarynetworks.cc/mcp"}
+AUTHORIZE OK, redirecting to CF, ourState: 28908a6296c071a4f42186705d44445c
+CF-CALLBACK hit, state: 28908a6296c071a4f42186705d44445c hasCode: true
+CF token exchange OK. authenticated as: lucaskerim@gmail.com
+CF-CALLBACK: redirecting back to caller: https://claude.ai/api/mcp/auth_callback?code=7d67c92537f3c206deeb02ffa4ff5812a945e38701dff857&state=bfuOQIqbYcRlT1xVwPtsoSgyAOvJrPIs3Kbi3ynLXNM
+TOKEN request grant_type: authorization_code
+TOKEN: issuing access token to caller

@@ -1,11 +1,42 @@
 import crypto from "crypto";
 import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { SignJWT, decodeJwt } from "jose";
+
+const STATE_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "oauth_state.json");
 
 const clients = new Map();
 const authSessions = new Map();
 const authCodes = new Map();
 const refreshTokens = new Map();
+
+function loadState() {
+  try {
+    if (!fs.existsSync(STATE_FILE)) return;
+    const data = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
+    for (const [k, v] of data.clients || []) clients.set(k, v);
+    for (const [k, v] of data.refreshTokens || []) refreshTokens.set(k, v);
+    console.log("OAUTH STATE loaded:", clients.size, "clients,", refreshTokens.size, "refresh tokens");
+  } catch (err) {
+    console.error("OAUTH STATE load failed:", err.message);
+  }
+}
+
+function saveState() {
+  try {
+    const data = {
+      clients: [...clients.entries()],
+      refreshTokens: [...refreshTokens.entries()],
+    };
+    fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.error("OAUTH STATE save failed:", err.message);
+  }
+}
+
+loadState();
 
 function b64url(buf) {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -52,6 +83,7 @@ export function mountOAuth(app, cfg) {
     const clientId = "hive-" + crypto.randomBytes(12).toString("hex");
     const redirectUris = req.body.redirect_uris || [];
     clients.set(clientId, { redirectUris });
+    saveState();
     console.log("REGISTER:", JSON.stringify(req.body), "-> issued", clientId);
     res.status(201).json({
       client_id: clientId,
@@ -128,6 +160,7 @@ export function mountOAuth(app, cfg) {
     const ourAccessToken = await mintAccessToken(email);
     const ourRefreshToken = crypto.randomBytes(24).toString("hex");
     refreshTokens.set(ourRefreshToken, { email });
+    saveState();
 
     const ourCode = crypto.randomBytes(24).toString("hex");
     authCodes.set(ourCode, {

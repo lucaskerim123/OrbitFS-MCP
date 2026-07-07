@@ -1,6 +1,7 @@
 $nodeRunning = Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like "*mcp-hive-server*server.js*" }
 if (-not $nodeRunning) {
   Start-Process -FilePath "node" -ArgumentList "C:\mcp-hive-server\server.js" `
+    -WorkingDirectory "C:\mcp-hive-server" `
     -RedirectStandardOutput "C:\mcp-hive-server\out.log" `
     -RedirectStandardError "C:\mcp-hive-server\err.log" -WindowStyle Hidden
 }
