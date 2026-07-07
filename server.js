@@ -16,6 +16,48 @@ const API_KEY = process.env.HIVE_API_KEY;
 const PORT = process.env.PORT || 3939;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
+const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const LOG_DIR = path.join(SERVER_DIR, "logs");
+const EVENT_LOG_FILE = path.join(LOG_DIR, "master-hive-events.jsonl");
+const ERROR_LOG_FILE = path.join(LOG_DIR, "master-hive-errors.jsonl");
+
+function logEvent(event, fields = {}) {
+  const line = JSON.stringify({ ts: new Date().toISOString(), event, ...fields });
+  console.log(line);
+  fs.appendFile(EVENT_LOG_FILE, `${line}\n`).catch(() => {});
+}
+
+function logError(event, err, fields = {}) {
+  const line = JSON.stringify({ ts: new Date().toISOString(), event, error: err.message, ...fields });
+  console.error(line);
+  fs.appendFile(ERROR_LOG_FILE, `${line}\n`).catch(() => {});
+}
+
+function requestId() {
+  return crypto.randomBytes(6).toString("hex");
+}
+
+function requestContext(req) {
+  return {
+    rid: req.id,
+    method: req.method,
+    path: req.path,
+    ip: req.ip,
+    auth: req.authContext?.type,
+    flow: req.authContext?.flow,
+    email: req.authContext?.email,
+  };
+}
+
+function summarizeMcpBody(body) {
+  if (!body || typeof body !== "object") return {};
+  const params = body.params || {};
+  return {
+    rpcMethod: body.method,
+    rpcId: body.id,
+    tool: params.name,
+  };
+}
 
 function safeResolve(rel) {
   const full = path.resolve(ROOT, rel || ".");
@@ -77,7 +119,7 @@ async function listManifest(dir, base) {
   return out;
 }
 
-function buildServer() {
+function buildServer(authContext = {}) {
   const server = new McpServer({ name: "master-hive", version: "1.0.0" });
 
   server.tool(
@@ -88,15 +130,18 @@ function buildServer() {
       recursive: z.boolean().optional().describe("List all nested contents, not just top level"),
     },
     async ({ subpath, recursive }) => {
+      logEvent("tool.list_files.start", { ...authContext, subpath: subpath || "", recursive: !!recursive });
       const dir = safeResolve(subpath);
       if (recursive) {
         const lines = await listRecursive(dir, subpath || "");
+        logEvent("tool.list_files.ok", { ...authContext, subpath: subpath || "", recursive: true, count: lines.length });
         return { content: [{ type: "text", text: lines.join("\n") || "(empty)" }] };
       }
       const entries = await fs.readdir(dir, { withFileTypes: true });
       const listing = entries
         .map((e) => (e.isDirectory() ? "[DIR] " : "[FILE] ") + e.name)
         .join("\n");
+      logEvent("tool.list_files.ok", { ...authContext, subpath: subpath || "", recursive: false, count: entries.length });
       return { content: [{ type: "text", text: listing || "(empty)" }] };
     }
   );
@@ -106,8 +151,10 @@ function buildServer() {
     "Read a file's contents from the Master Hive store",
     { filepath: z.string().describe("Relative path to the file") },
     async ({ filepath }) => {
+      logEvent("tool.read_file.start", { ...authContext, filepath });
       const full = safeResolve(filepath);
       const buf = await fs.readFile(full);
+      logEvent("tool.read_file.ok", { ...authContext, filepath, bytes: buf.length });
       return { content: [{ type: "text", text: decodeText(buf) }] };
     }
   );
@@ -120,9 +167,11 @@ function buildServer() {
       content: z.string().describe("Full text content to write"),
     },
     async ({ filepath, content }) => {
+      logEvent("tool.write_file.start", { ...authContext, filepath, chars: content.length });
       const full = safeResolve(filepath);
       await fs.mkdir(path.dirname(full), { recursive: true });
       await fs.writeFile(full, content, "utf-8");
+      logEvent("file.change.write", { ...authContext, source: "mcp_tool", filepath, chars: content.length });
       return {
         content: [{ type: "text", text: `Wrote ${content.length} chars to ${filepath}` }],
       };
@@ -134,8 +183,10 @@ function buildServer() {
     "Delete a file from the Master Hive store",
     { filepath: z.string().describe("Relative path to the file") },
     async ({ filepath }) => {
+      logEvent("tool.delete_file.start", { ...authContext, filepath });
       const full = safeResolve(filepath);
       await fs.unlink(full);
+      logEvent("file.change.delete", { ...authContext, source: "mcp_tool", filepath });
       return { content: [{ type: "text", text: `Deleted ${filepath}` }] };
     }
   );
@@ -148,10 +199,12 @@ function buildServer() {
       to: z.string().describe("Relative destination path"),
     },
     async ({ from, to }) => {
+      logEvent("tool.move_file.start", { ...authContext, from, to });
       const src = safeResolve(from);
       const dest = safeResolve(to);
       await fs.mkdir(path.dirname(dest), { recursive: true });
       await fs.rename(src, dest);
+      logEvent("file.change.move", { ...authContext, source: "mcp_tool", from, to });
       return { content: [{ type: "text", text: `Moved ${from} -> ${to}` }] };
     }
   );
@@ -170,21 +223,49 @@ mountOAuth(app, {
   secretKey: SECRET_KEY,
 });
 
+app.use((req, res, next) => {
+  req.id = requestId();
+  const started = Date.now();
+  res.on("finish", () => {
+    logEvent("http.request", {
+      ...requestContext(req),
+      status: res.statusCode,
+      ms: Date.now() - started,
+    });
+  });
+  next();
+});
+
 app.use(express.json());
 
 async function checkAuth(req) {
   const auth = req.headers["authorization"];
-  if (!auth || !auth.startsWith("Bearer ")) return false;
+  if (!auth || !auth.startsWith("Bearer ")) {
+    logEvent("auth.missing", requestContext(req));
+    return false;
+  }
   const token = auth.slice(7);
-  if (token === API_KEY) return true;
+  if (token === API_KEY) {
+    const headerFlow = String(req.headers["x-hive-flow"] || "").toLowerCase();
+    const flow = ["chatgpt", "claude", "webpanel"].includes(headerFlow) ? headerFlow : "api_key";
+    req.authContext = { type: "api_key", flow };
+    logEvent("auth.api_key.ok", requestContext(req));
+    return true;
+  }
   try {
     const { payload } = await jwtVerify(token, SECRET_KEY, {
       issuer: PUBLIC_BASE_URL,
       audience: `${PUBLIC_BASE_URL}/mcp`,
     });
+    req.authContext = {
+      type: "jwt",
+      flow: payload.flow || "unknown",
+      email: payload.email || payload.sub || null,
+    };
+    logEvent("auth.jwt.ok", requestContext(req));
     return !!payload;
   } catch (err) {
-    console.error("JWT verification failed:", err.message);
+    logError("auth.jwt.failed", err, requestContext(req));
     return false;
   }
 }
@@ -202,14 +283,20 @@ app.use("/mcp", async (req, res, next) => {
 });
 
 app.post("/mcp", async (req, res) => {
-  const server = buildServer();
+  logEvent("mcp.request.start", { ...requestContext(req), ...summarizeMcpBody(req.body) });
+  const server = buildServer(req.authContext || {});
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on("close", () => {
     transport.close();
     server.close();
   });
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
+  try {
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (err) {
+    logError("mcp.request.failed", err, { ...requestContext(req), ...summarizeMcpBody(req.body) });
+    throw err;
+  }
 });
 
 // --- REST API for the Master Brain web panel ---------------------------
@@ -230,8 +317,10 @@ app.use("/api", async (req, res, next) => {
 app.get("/api/manifest", async (req, res) => {
   try {
     const files = await listManifest(safeResolve(""), "");
+    logEvent("api.manifest.ok", { ...requestContext(req), count: files.length });
     res.json({ files });
   } catch (err) {
+    logError("api.manifest.failed", err, requestContext(req));
     res.status(500).json({ error: err.message });
   }
 });
@@ -247,8 +336,10 @@ app.get("/api/files", async (req, res) => {
         return { name: e.name, type: "file", size: stat.size, mtime: stat.mtime.toISOString() };
       })
     );
+    logEvent("api.files.ok", { ...requestContext(req), subpath: req.query.subpath || "", count: withStats.length });
     res.json({ entries: withStats });
   } catch (err) {
+    logError("api.files.failed", err, { ...requestContext(req), subpath: req.query.subpath || "" });
     res.status(400).json({ error: err.message });
   }
 });
@@ -257,8 +348,10 @@ app.get("/api/file", async (req, res) => {
   try {
     const full = safeResolve(req.query.path);
     const buf = await fs.readFile(full);
+    logEvent("api.file.read.ok", { ...requestContext(req), path: req.query.path, bytes: buf.length });
     res.json({ content: decodeText(buf) });
   } catch (err) {
+    logError("api.file.read.failed", err, { ...requestContext(req), path: req.query.path });
     res.status(400).json({ error: err.message });
   }
 });
@@ -268,8 +361,10 @@ app.put("/api/file", async (req, res) => {
     const full = safeResolve(req.body.path);
     await fs.mkdir(path.dirname(full), { recursive: true });
     await fs.writeFile(full, req.body.content ?? "", "utf-8");
+    logEvent("file.change.write", { ...requestContext(req), source: "rest_api", path: req.body.path, chars: (req.body.content ?? "").length });
     res.json({ ok: true });
   } catch (err) {
+    logError("api.file.write.failed", err, { ...requestContext(req), path: req.body?.path });
     res.status(400).json({ error: err.message });
   }
 });
@@ -283,8 +378,10 @@ app.delete("/api/file", async (req, res) => {
     } else {
       await fs.unlink(full);
     }
+    logEvent("file.change.delete", { ...requestContext(req), source: "rest_api", path: req.query.path, type: stat.isDirectory() ? "dir" : "file" });
     res.json({ ok: true });
   } catch (err) {
+    logError("api.file.delete.failed", err, { ...requestContext(req), path: req.query.path });
     res.status(400).json({ error: err.message });
   }
 });
@@ -295,8 +392,10 @@ app.post("/api/move", async (req, res) => {
     const dest = safeResolve(req.body.to);
     await fs.mkdir(path.dirname(dest), { recursive: true });
     await fs.rename(src, dest);
+    logEvent("file.change.move", { ...requestContext(req), source: "rest_api", from: req.body.from, to: req.body.to });
     res.json({ ok: true });
   } catch (err) {
+    logError("api.move.failed", err, { ...requestContext(req), from: req.body?.from, to: req.body?.to });
     res.status(400).json({ error: err.message });
   }
 });
@@ -305,8 +404,10 @@ app.post("/api/mkdir", async (req, res) => {
   try {
     const full = safeResolve(req.body.path);
     await fs.mkdir(full, { recursive: true });
+    logEvent("file.change.mkdir", { ...requestContext(req), source: "rest_api", path: req.body.path });
     res.json({ ok: true });
   } catch (err) {
+    logError("api.mkdir.failed", err, { ...requestContext(req), path: req.body?.path });
     res.status(400).json({ error: err.message });
   }
 });
@@ -314,8 +415,10 @@ app.post("/api/mkdir", async (req, res) => {
 app.get("/api/download", async (req, res) => {
   try {
     const full = safeResolve(req.query.path);
+    logEvent("api.download.start", { ...requestContext(req), path: req.query.path });
     res.download(full, path.basename(full));
   } catch (err) {
+    logError("api.download.failed", err, { ...requestContext(req), path: req.query.path });
     res.status(400).json({ error: err.message });
   }
 });
@@ -327,8 +430,10 @@ app.post("/api/upload", express.raw({ type: () => true, limit: "2gb" }), async (
     const full = safeResolve(req.query.path);
     await fs.mkdir(path.dirname(full), { recursive: true });
     await fs.writeFile(full, req.body);
+    logEvent("file.change.upload", { ...requestContext(req), source: "rest_api", path: req.query.path, bytes: req.body.length });
     res.json({ ok: true, bytes: req.body.length });
   } catch (err) {
+    logError("api.upload.failed", err, { ...requestContext(req), path: req.query.path });
     res.status(400).json({ error: err.message });
   }
 });
@@ -336,9 +441,11 @@ app.post("/api/upload", express.raw({ type: () => true, limit: "2gb" }), async (
 // Read-only summary of connected MCP clients (Claude/ChatGPT DCR registrations
 // + which accounts hold a refresh token) - no secrets included.
 app.get("/api/oauth-state", (req, res) => {
+  logEvent("api.oauth_state.ok", requestContext(req));
   res.json(getOAuthState());
 });
 
-app.listen(PORT, () => {
-  console.log(`Master Hive MCP server listening on :${PORT}`);
+app.listen(PORT, async () => {
+  await fs.mkdir(LOG_DIR, { recursive: true }).catch(() => {});
+  logEvent("server.start", { port: PORT, root: ROOT, publicBaseUrl: PUBLIC_BASE_URL });
 });

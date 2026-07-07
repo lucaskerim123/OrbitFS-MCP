@@ -1,0 +1,359 @@
+openapi: 3.1.0
+info:
+  title: Master Hive Full Actions
+  version: 1.0.0
+  description: Full ChatGPT Actions for the Master Hive live server. Includes read and write operations.
+servers:
+  - url: https://YOUR_PUBLIC_BASE_URL
+    description: Replace with PUBLIC_BASE_URL from the live server environment.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    HiveFlowHeader:
+      name: X-Hive-Flow
+      in: header
+      required: true
+      description: Identifies ChatGPT Actions traffic in Hive logs.
+      schema:
+        type: string
+        enum:
+          - chatgpt
+        default: chatgpt
+  schemas:
+    FileEntry:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - file
+            - dir
+        size:
+          type: number
+        mtime:
+          type: string
+          format: date-time
+      required:
+        - name
+        - type
+    FileManifestEntry:
+      type: object
+      properties:
+        path:
+          type: string
+        size:
+          type: number
+        mtime:
+          type: string
+          format: date-time
+        sha256:
+          type: string
+      required:
+        - path
+        - size
+        - mtime
+        - sha256
+    OkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required:
+        - ok
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+security:
+  - bearerAuth: []
+paths:
+  /api/ping:
+    get:
+      operationId: pingHive
+      summary: Check whether the Master Hive server is reachable.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      responses:
+        "200":
+          description: Server health response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+  /api/manifest:
+    get:
+      operationId: getManifest
+      summary: Get the full file manifest.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      responses:
+        "200":
+          description: File manifest.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FileManifestEntry"
+                required:
+                  - files
+  /api/files:
+    get:
+      operationId: listFolder
+      summary: List files and folders in one Master Hive folder.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+        - name: subpath
+          in: query
+          required: false
+          description: Relative folder path. Omit for the Hive root.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Folder entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FileEntry"
+                required:
+                  - entries
+  /api/file:
+    get:
+      operationId: readFile
+      summary: Read a text file from the Master Hive.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+        - name: path
+          in: query
+          required: true
+          description: Relative file path to read.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File contents.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+                required:
+                  - content
+    put:
+      operationId: writeFile
+      summary: Create or overwrite a text file in the Master Hive.
+      description: Admin action. Require explicit user confirmation before use.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                  description: Relative file path to write.
+                content:
+                  type: string
+                  description: Full text content to write.
+              required:
+                - path
+                - content
+      responses:
+        "200":
+          description: Write result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+    delete:
+      operationId: deleteFile
+      summary: Delete a file or folder from the Master Hive.
+      description: Admin action. Require explicit user confirmation before use.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+        - name: path
+          in: query
+          required: true
+          description: Relative file or folder path to delete.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+  /api/move:
+    post:
+      operationId: moveFile
+      summary: Move or rename a file or folder.
+      description: Admin action. Require explicit user confirmation before use.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                  description: Relative source path.
+                to:
+                  type: string
+                  description: Relative destination path.
+              required:
+                - from
+                - to
+      responses:
+        "200":
+          description: Move result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+  /api/mkdir:
+    post:
+      operationId: createFolder
+      summary: Create a folder in the Master Hive.
+      description: Admin action. Require explicit user confirmation before use.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                  description: Relative folder path to create.
+              required:
+                - path
+      responses:
+        "200":
+          description: Folder creation result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+  /api/download:
+    get:
+      operationId: downloadFile
+      summary: Download a file from the Master Hive.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+        - name: path
+          in: query
+          required: true
+          description: Relative file path to download.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File bytes.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+  /api/upload:
+    post:
+      operationId: uploadFile
+      summary: Upload raw file bytes to the Master Hive.
+      description: Admin action. Require explicit user confirmation before use.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+        - name: path
+          in: query
+          required: true
+          description: Relative destination file path.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Upload result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  bytes:
+                    type: number
+                required:
+                  - ok
+                  - bytes
+  /api/oauth-state:
+    get:
+      operationId: getOAuthState
+      summary: Get registered OAuth clients and refresh-token account summary.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      responses:
+        "200":
+          description: OAuth state summary. Does not include token secret values.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clients:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        redirectUris:
+                          type: array
+                          items:
+                            type: string
+                      required:
+                        - id
+                        - redirectUris
+                  refreshTokens:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        email:
+                          type: string
+                      required:
+                        - email
+                required:
+                  - clients
+                  - refreshTokens

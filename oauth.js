@@ -6,11 +6,47 @@ import { fileURLToPath } from "url";
 import { SignJWT, decodeJwt } from "jose";
 
 const STATE_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "oauth_state.json");
+const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const LOG_DIR = path.join(SERVER_DIR, "logs");
+const EVENT_LOG_FILE = path.join(LOG_DIR, "master-hive-events.jsonl");
+const ERROR_LOG_FILE = path.join(LOG_DIR, "master-hive-errors.jsonl");
 
 const clients = new Map();
 const authSessions = new Map();
 const authCodes = new Map();
 const refreshTokens = new Map();
+
+function logEvent(event, fields = {}) {
+  const line = JSON.stringify({ ts: new Date().toISOString(), event, ...fields });
+  console.log(line);
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(EVENT_LOG_FILE, `${line}\n`, "utf-8");
+  } catch {}
+}
+
+function logError(event, err, fields = {}) {
+  const line = JSON.stringify({ ts: new Date().toISOString(), event, error: err.message, ...fields });
+  console.error(line);
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(ERROR_LOG_FILE, `${line}\n`, "utf-8");
+  } catch {}
+}
+
+function classifyRedirect(uri = "") {
+  if (uri.includes("chatgpt.com/connector/oauth")) return "chatgpt";
+  if (uri.includes("claude.ai/api/mcp/auth_callback")) return "claude";
+  return "other";
+}
+
+function redirectHost(uri = "") {
+  try {
+    return new URL(uri).host;
+  } catch {
+    return uri || null;
+  }
+}
 
 function loadState() {
   try {
@@ -18,9 +54,9 @@ function loadState() {
     const data = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
     for (const [k, v] of data.clients || []) clients.set(k, v);
     for (const [k, v] of data.refreshTokens || []) refreshTokens.set(k, v);
-    console.log("OAUTH STATE loaded:", clients.size, "clients,", refreshTokens.size, "refresh tokens");
+    logEvent("oauth.state.loaded", { clients: clients.size, refreshTokens: refreshTokens.size });
   } catch (err) {
-    console.error("OAUTH STATE load failed:", err.message);
+    logError("oauth.state.load_failed", err);
   }
 }
 
@@ -32,7 +68,7 @@ function saveState() {
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2), "utf-8");
   } catch (err) {
-    console.error("OAUTH STATE save failed:", err.message);
+    logError("oauth.state.save_failed", err);
   }
 }
 
@@ -53,16 +89,17 @@ export function getOAuthState() {
     clients: [...clients.entries()].map(([id, c]) => ({
       id,
       redirectUris: c.redirectUris,
+      flow: classifyRedirect(c.redirectUris?.[0]),
     })),
-    refreshTokens: [...refreshTokens.values()].map((v) => ({ email: v.email })),
+    refreshTokens: [...refreshTokens.values()].map((v) => ({ email: v.email, flow: v.flow || "unknown" })),
   };
 }
 
 export function mountOAuth(app, cfg) {
   const { publicBaseUrl, cfAuthEndpoint, cfTokenEndpoint, cfClientId, cfClientSecret, secretKey } = cfg;
 
-  async function mintAccessToken(email) {
-    return new SignJWT({ email })
+  async function mintAccessToken(email, flow = "unknown") {
+    return new SignJWT({ email, flow })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuer(publicBaseUrl)
       .setAudience(`${publicBaseUrl}/mcp`)
@@ -96,7 +133,12 @@ export function mountOAuth(app, cfg) {
     const redirectUris = req.body.redirect_uris || [];
     clients.set(clientId, { redirectUris });
     saveState();
-    console.log("REGISTER:", JSON.stringify(req.body), "-> issued", clientId);
+    logEvent("oauth.register.ok", {
+      clientId,
+      flow: classifyRedirect(redirectUris[0]),
+      redirectHost: redirectHost(redirectUris[0]),
+      redirectCount: redirectUris.length,
+    });
     res.status(201).json({
       client_id: clientId,
       client_id_issued_at: Math.floor(Date.now() / 1000),
@@ -110,9 +152,14 @@ export function mountOAuth(app, cfg) {
   app.get("/oauth/authorize", (req, res) => {
     const { client_id, redirect_uri, state, code_challenge, code_challenge_method } = req.query;
     const client = clients.get(client_id);
-    console.log("AUTHORIZE query:", JSON.stringify(req.query));
+    const flow = classifyRedirect(redirect_uri);
     if (!client || !client.redirectUris.includes(redirect_uri)) {
-      console.log("AUTHORIZE REJECTED. known clients:", JSON.stringify([...clients.keys()]));
+      logEvent("oauth.authorize.rejected", {
+        clientId: client_id || null,
+        flow,
+        redirectHost: redirectHost(redirect_uri),
+        knownClients: clients.size,
+      });
       return res.status(400).send("Unknown client or redirect_uri");
     }
     const ourState = crypto.randomBytes(16).toString("hex");
@@ -120,12 +167,19 @@ export function mountOAuth(app, cfg) {
     const cfChallenge = b64url(sha256(cfVerifier));
     authSessions.set(ourState, {
       redirect_uri,
+      flow,
       state,
       code_challenge,
       code_challenge_method: code_challenge_method || "S256",
       cfVerifier,
     });
-    console.log("AUTHORIZE OK, redirecting to CF, ourState:", ourState);
+    logEvent("oauth.authorize.ok", {
+      clientId: client_id,
+      flow,
+      redirectHost: redirectHost(redirect_uri),
+      pkce: !!code_challenge,
+      codeChallengeMethod: code_challenge_method || "S256",
+    });
     const cfUrl = new URL(cfAuthEndpoint);
     cfUrl.searchParams.set("response_type", "code");
     cfUrl.searchParams.set("client_id", cfClientId);
@@ -139,10 +193,10 @@ export function mountOAuth(app, cfg) {
 
   app.get("/oauth/cf-callback", async (req, res) => {
     const { code, state } = req.query;
-    console.log("CF-CALLBACK hit, state:", state, "hasCode:", !!code);
+    logEvent("oauth.cf_callback.start", { stateKnown: authSessions.has(state), hasCode: !!code });
     const session = authSessions.get(state);
     if (!session) {
-      console.log("CF-CALLBACK: unknown/expired session for state", state);
+      logEvent("oauth.cf_callback.rejected", { reason: "unknown_or_expired_session" });
       return res.status(400).send("Unknown or expired session");
     }
     authSessions.delete(state);
@@ -161,17 +215,21 @@ export function mountOAuth(app, cfg) {
       body: params,
     });
     if (!tokenResp.ok) {
-      console.error("CF token exchange failed:", await tokenResp.text());
+      const upstreamText = await tokenResp.text();
+      logError("oauth.cf_token_exchange.failed", new Error(`HTTP ${tokenResp.status}`), {
+        upstreamStatus: tokenResp.status,
+        upstreamMessage: upstreamText.slice(0, 200),
+      });
       return res.status(502).send("Upstream auth failed");
     }
     const tokens = await tokenResp.json();
     const claims = decodeJwt(tokens.id_token || tokens.access_token);
     const email = claims.email || claims.sub;
-    console.log("CF token exchange OK. authenticated as:", email);
+    logEvent("oauth.cf_token_exchange.ok", { email, flow: classifyRedirect(session.redirect_uri) });
 
-    const ourAccessToken = await mintAccessToken(email);
+    const ourAccessToken = await mintAccessToken(email, session.flow);
     const ourRefreshToken = crypto.randomBytes(24).toString("hex");
-    refreshTokens.set(ourRefreshToken, { email });
+    refreshTokens.set(ourRefreshToken, { email, flow: session.flow });
     saveState();
 
     const ourCode = crypto.randomBytes(24).toString("hex");
@@ -185,22 +243,25 @@ export function mountOAuth(app, cfg) {
     const backUrl = new URL(session.redirect_uri);
     backUrl.searchParams.set("code", ourCode);
     if (session.state) backUrl.searchParams.set("state", session.state);
-    console.log("CF-CALLBACK: redirecting back to caller:", backUrl.toString());
+    logEvent("oauth.cf_callback.redirect", {
+      flow: classifyRedirect(session.redirect_uri),
+      redirectHost: redirectHost(session.redirect_uri),
+    });
     res.redirect(backUrl.toString());
   });
 
   app.post("/oauth/token", express.urlencoded({ extended: true }), async (req, res) => {
     const { grant_type, code, code_verifier, refresh_token } = req.body;
-    console.log("TOKEN request grant_type:", grant_type);
+    logEvent("oauth.token.start", { grantType: grant_type });
 
     if (grant_type === "refresh_token") {
       const entry = refreshTokens.get(refresh_token);
       if (!entry) {
-        console.log("TOKEN refresh: unknown refresh_token");
+        logEvent("oauth.token.refresh_rejected", { reason: "unknown_refresh_token" });
         return res.status(400).json({ error: "invalid_grant" });
       }
-      const accessToken = await mintAccessToken(entry.email);
-      console.log("TOKEN refresh OK for", entry.email);
+      const accessToken = await mintAccessToken(entry.email, entry.flow || "unknown");
+      logEvent("oauth.token.refresh_ok", { email: entry.email, flow: entry.flow || "unknown" });
       return res.json({
         access_token: accessToken,
         refresh_token,
@@ -214,7 +275,7 @@ export function mountOAuth(app, cfg) {
     }
     const entry = authCodes.get(code);
     if (!entry || entry.expires < Date.now()) {
-      console.log("TOKEN: invalid or expired code");
+      logEvent("oauth.token.code_rejected", { reason: "invalid_or_expired_code" });
       return res.status(400).json({ error: "invalid_grant" });
     }
     authCodes.delete(code);
@@ -222,12 +283,12 @@ export function mountOAuth(app, cfg) {
     if (entry.code_challenge) {
       const expected = b64url(sha256(code_verifier || ""));
       if (expected !== entry.code_challenge) {
-        console.log("TOKEN: PKCE mismatch");
+        logEvent("oauth.token.code_rejected", { reason: "pkce_mismatch" });
         return res.status(400).json({ error: "invalid_grant" });
       }
     }
 
-    console.log("TOKEN: issuing access token to caller");
+    logEvent("oauth.token.code_ok", { refreshIssued: !!entry.refreshToken });
     res.json({
       access_token: entry.accessToken,
       refresh_token: entry.refreshToken,

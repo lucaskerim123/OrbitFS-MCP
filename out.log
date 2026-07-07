@@ -1,3 +1,4 @@
-OAUTH STATE loaded: 5 clients, 3 refresh tokens
-◇ injected env (11) from .env // tip: ⌘ suppress logs { quiet: true }
-Master Hive MCP server listening on :3939
+{"ts":"2026-07-07T21:31:57.541Z","event":"oauth.state.loaded","clients":5,"refreshTokens":3}
+◇ injected env (11) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+{"ts":"2026-07-07T21:31:57.549Z","event":"server.start","port":"3939","root":"C:\\Project FireStorm\\The Master Hive","publicBaseUrl":"https://hive.incendiarynetworks.cc"}
+{"ts":"2026-07-07T21:32:28.814Z","event":"http.request","rid":"e33b187b4265","method":"GET","path":"/api/ping","ip":"::ffff:127.0.0.1","status":200,"ms":4}
