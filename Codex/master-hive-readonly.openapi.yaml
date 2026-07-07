@@ -1,0 +1,151 @@
+openapi: 3.1.0
+info:
+  title: Master Hive Read-Only Actions
+  version: 1.0.0
+  description: Read-only ChatGPT Actions for the Master Hive live server.
+servers:
+  - url: https://YOUR_PUBLIC_BASE_URL
+    description: Replace with PUBLIC_BASE_URL from the live server environment.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    HiveFlowHeader:
+      name: X-Hive-Flow
+      in: header
+      required: true
+      description: Identifies ChatGPT Actions traffic in Hive logs.
+      schema:
+        type: string
+        enum:
+          - chatgpt
+        default: chatgpt
+  schemas:
+    FileEntry:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - file
+            - dir
+        size:
+          type: number
+        mtime:
+          type: string
+          format: date-time
+      required:
+        - name
+        - type
+    FileManifestEntry:
+      type: object
+      properties:
+        path:
+          type: string
+        size:
+          type: number
+        mtime:
+          type: string
+          format: date-time
+        sha256:
+          type: string
+      required:
+        - path
+        - size
+        - mtime
+        - sha256
+security:
+  - bearerAuth: []
+paths:
+  /api/ping:
+    get:
+      operationId: pingHive
+      summary: Check whether the Master Hive server is reachable.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      responses:
+        "200":
+          description: Server health response.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required:
+                  - ok
+  /api/files:
+    get:
+      operationId: listFolder
+      summary: List files and folders in one Master Hive folder.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+        - name: subpath
+          in: query
+          required: false
+          description: Relative folder path. Omit for the Hive root.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Folder entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FileEntry"
+                required:
+                  - entries
+  /api/file:
+    get:
+      operationId: readFile
+      summary: Read a text file from the Master Hive.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+        - name: path
+          in: query
+          required: true
+          description: Relative file path to read.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File contents.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+                required:
+                  - content
+  /api/manifest:
+    get:
+      operationId: getManifest
+      summary: Get the full read-only file manifest.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      responses:
+        "200":
+          description: File manifest.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FileManifestEntry"
+                required:
+                  - files
