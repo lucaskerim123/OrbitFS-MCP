@@ -22,15 +22,50 @@ function safeResolve(rel) {
   return full;
 }
 
+function decodeText(buf) {
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    return buf.slice(2).toString("utf16le");
+  }
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    return buf.slice(2).swap16().toString("utf16le");
+  }
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    return buf.slice(3).toString("utf-8");
+  }
+  return buf.toString("utf-8");
+}
+
+async function listRecursive(dir, base) {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  let lines = [];
+  for (const e of entries) {
+    const rel = path.join(base, e.name);
+    if (e.isDirectory()) {
+      lines.push(`[DIR] ${rel}`);
+      lines = lines.concat(await listRecursive(path.join(dir, e.name), rel));
+    } else {
+      lines.push(`[FILE] ${rel}`);
+    }
+  }
+  return lines;
+}
+
 function buildServer() {
   const server = new McpServer({ name: "master-hive", version: "1.0.0" });
 
   server.tool(
     "list_files",
     "List files and folders in the Master Hive store",
-    { subpath: z.string().optional().describe("Relative subfolder, default root") },
-    async ({ subpath }) => {
+    {
+      subpath: z.string().optional().describe("Relative subfolder, default root"),
+      recursive: z.boolean().optional().describe("List all nested contents, not just top level"),
+    },
+    async ({ subpath, recursive }) => {
       const dir = safeResolve(subpath);
+      if (recursive) {
+        const lines = await listRecursive(dir, subpath || "");
+        return { content: [{ type: "text", text: lines.join("\n") || "(empty)" }] };
+      }
       const entries = await fs.readdir(dir, { withFileTypes: true });
       const listing = entries
         .map((e) => (e.isDirectory() ? "[DIR] " : "[FILE] ") + e.name)
@@ -45,8 +80,8 @@ function buildServer() {
     { filepath: z.string().describe("Relative path to the file") },
     async ({ filepath }) => {
       const full = safeResolve(filepath);
-      const data = await fs.readFile(full, "utf-8");
-      return { content: [{ type: "text", text: data }] };
+      const buf = await fs.readFile(full);
+      return { content: [{ type: "text", text: decodeText(buf) }] };
     }
   );
 
@@ -75,6 +110,22 @@ function buildServer() {
       const full = safeResolve(filepath);
       await fs.unlink(full);
       return { content: [{ type: "text", text: `Deleted ${filepath}` }] };
+    }
+  );
+
+  server.tool(
+    "move_file",
+    "Move or rename a file or folder within the Master Hive store (e.g. to sort something out of _sorter into its real home). Creates destination folders as needed.",
+    {
+      from: z.string().describe("Relative source path"),
+      to: z.string().describe("Relative destination path"),
+    },
+    async ({ from, to }) => {
+      const src = safeResolve(from);
+      const dest = safeResolve(to);
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.rename(src, dest);
+      return { content: [{ type: "text", text: `Moved ${from} -> ${to}` }] };
     }
   );
 
