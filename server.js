@@ -1,6 +1,5 @@
 import "dotenv/config";
 import express from "express";
-import path from "path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -23,11 +22,14 @@ function buildServer() {
   server.tool(
     "list_files",
     "List files and folders in the Master Hive store",
-    { subpath: z.string().optional().describe("Relative subfolder, default root") },
-    async ({ subpath }) => {
-      const entries = await ops.listFiles(subpath);
+    {
+      subpath: z.string().optional().describe("Relative subfolder, default root"),
+      recursive: z.boolean().optional().describe("List all nested contents, not just top level"),
+    },
+    async ({ subpath, recursive }) => {
+      const entries = await ops.listFiles(subpath, { recursive });
       const listing = entries
-        .map((e) => (e.type === "dir" ? "[DIR] " : "[FILE] ") + e.name)
+        .map((e) => (e.type === "dir" ? "[DIR] " : "[FILE] ") + (e.path ?? e.name))
         .join("\n");
       return { content: [{ type: "text", text: listing || "(empty)" }] };
     }
@@ -70,10 +72,10 @@ function buildServer() {
 
   server.tool(
     "move_file",
-    "Move or rename a file within the Master Hive store",
+    "Move or rename a file or folder within the Master Hive store (e.g. to sort something out of _sorter into its real home). Creates destination folders as needed.",
     {
-      from: z.string().describe("Relative path to the source file"),
-      to: z.string().describe("Relative path to the destination"),
+      from: z.string().describe("Relative source path"),
+      to: z.string().describe("Relative destination path"),
     },
     async ({ from, to }) => {
       await ops.moveFile(from, to);
@@ -214,7 +216,8 @@ app.get("/api/manifest", async (req, res) => {
 
 app.get("/api/files", async (req, res) => {
   try {
-    res.json({ entries: await ops.listFiles(req.query.subpath) });
+    const recursive = req.query.recursive === "true";
+    res.json({ entries: await ops.listFiles(req.query.subpath, { recursive }) });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
