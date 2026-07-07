@@ -15,11 +15,47 @@
           "https://claude.ai/api/mcp/auth_callback"
         ]
       }
+    ],
+    [
+      "hive-9c8c964a49d511f08ab6910c",
+      {
+        "redirectUris": [
+          "https://chatgpt.com/connector/oauth/K1Ixd1bBIWo_"
+        ]
+      }
+    ],
+    [
+      "hive-5a19e1c5dc45ab4adf9e5251",
+      {
+        "redirectUris": [
+          "https://chatgpt.com/connector/oauth/K1Ixd1bBIWo_"
+        ]
+      }
+    ],
+    [
+      "hive-191197e17abe73be193bcc34",
+      {
+        "redirectUris": [
+          "https://claude.ai/api/mcp/auth_callback"
+        ]
+      }
     ]
   ],
   "refreshTokens": [
     [
       "a02bf8dbcc60c59d14531b0470d069ed5687fa8a71a32fd0",
+      {
+        "email": "lucaskerim@gmail.com"
+      }
+    ],
+    [
+      "a8a62bad34f587cfb63daf2fbf5d18b7d70076255d31ee21",
+      {
+        "email": "lucaskerim@gmail.com"
+      }
+    ],
+    [
+      "6979e535d1468cb5ea317c5b642d216adffdb6508c81592c",
       {
         "email": "lucaskerim@gmail.com"
       }

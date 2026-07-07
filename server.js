@@ -4,11 +4,12 @@ import dotenv from "dotenv";
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), ".env") });
 import express from "express";
 import fs from "fs/promises";
+import crypto from "crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { jwtVerify } from "jose";
-import { mountOAuth } from "./oauth.js";
+import { mountOAuth, getOAuthState } from "./oauth.js";
 
 const ROOT = process.env.HIVE_ROOT;
 const API_KEY = process.env.HIVE_API_KEY;
@@ -50,6 +51,30 @@ async function listRecursive(dir, base) {
     }
   }
   return lines;
+}
+
+// Recursive listing with size/mtime/sha256 per file, used by the web panel's
+// PC<->VPS sync (and generally as a "what's actually in here" manifest).
+async function listManifest(dir, base) {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  let out = [];
+  for (const e of entries) {
+    const rel = path.join(base, e.name).split(path.sep).join("/");
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      out = out.concat(await listManifest(full, rel));
+    } else {
+      const buf = await fs.readFile(full);
+      const stat = await fs.stat(full);
+      out.push({
+        path: rel,
+        size: stat.size,
+        mtime: stat.mtime.toISOString(),
+        sha256: crypto.createHash("sha256").update(buf).digest("hex"),
+      });
+    }
+  }
+  return out;
 }
 
 function buildServer() {
@@ -185,6 +210,133 @@ app.post("/mcp", async (req, res) => {
   });
   await server.connect(transport);
   await transport.handleRequest(req, res, req.body);
+});
+
+// --- REST API for the Master Brain web panel ---------------------------
+// Same underlying file store as the MCP tools above, same HIVE_API_KEY
+// bearer auth, just a plain REST shape the panel's browser JS can call
+// directly (upload/download need raw bytes, which doesn't map cleanly onto
+// MCP tool calls over JSON-RPC).
+
+app.get("/api/ping", (req, res) => res.json({ ok: true }));
+
+app.use("/api", async (req, res, next) => {
+  if (req.path === "/ping") return next();
+  const ok = await checkAuth(req);
+  if (!ok) return res.status(401).json({ error: "Unauthorized" });
+  next();
+});
+
+app.get("/api/manifest", async (req, res) => {
+  try {
+    const files = await listManifest(safeResolve(""), "");
+    res.json({ files });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/files", async (req, res) => {
+  try {
+    const dir = safeResolve(req.query.subpath);
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const withStats = await Promise.all(
+      entries.map(async (e) => {
+        if (e.isDirectory()) return { name: e.name, type: "dir" };
+        const stat = await fs.stat(path.join(dir, e.name));
+        return { name: e.name, type: "file", size: stat.size, mtime: stat.mtime.toISOString() };
+      })
+    );
+    res.json({ entries: withStats });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/api/file", async (req, res) => {
+  try {
+    const full = safeResolve(req.query.path);
+    const buf = await fs.readFile(full);
+    res.json({ content: decodeText(buf) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put("/api/file", async (req, res) => {
+  try {
+    const full = safeResolve(req.body.path);
+    await fs.mkdir(path.dirname(full), { recursive: true });
+    await fs.writeFile(full, req.body.content ?? "", "utf-8");
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete("/api/file", async (req, res) => {
+  try {
+    const full = safeResolve(req.query.path);
+    const stat = await fs.stat(full);
+    if (stat.isDirectory()) {
+      await fs.rm(full, { recursive: true, force: true });
+    } else {
+      await fs.unlink(full);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/move", async (req, res) => {
+  try {
+    const src = safeResolve(req.body.from);
+    const dest = safeResolve(req.body.to);
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await fs.rename(src, dest);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/mkdir", async (req, res) => {
+  try {
+    const full = safeResolve(req.body.path);
+    await fs.mkdir(full, { recursive: true });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/api/download", async (req, res) => {
+  try {
+    const full = safeResolve(req.query.path);
+    res.download(full, path.basename(full));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Raw binary body, path given as a query param (browsers set Content-Type to
+// the file's own mime type on upload, so accept any content-type here).
+app.post("/api/upload", express.raw({ type: () => true, limit: "2gb" }), async (req, res) => {
+  try {
+    const full = safeResolve(req.query.path);
+    await fs.mkdir(path.dirname(full), { recursive: true });
+    await fs.writeFile(full, req.body);
+    res.json({ ok: true, bytes: req.body.length });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Read-only summary of connected MCP clients (Claude/ChatGPT DCR registrations
+// + which accounts hold a refresh token) - no secrets included.
+app.get("/api/oauth-state", (req, res) => {
+  res.json(getOAuthState());
 });
 
 app.listen(PORT, () => {
