@@ -2,6 +2,21 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 
+// Detects UTF-16LE/BE and UTF-8 BOMs so files saved by other editors/tools
+// (e.g. Windows Notepad) round-trip correctly instead of coming back mojibake.
+function decodeText(buf) {
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    return buf.slice(2).toString("utf16le");
+  }
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    return buf.slice(2).swap16().toString("utf16le");
+  }
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    return buf.slice(3).toString("utf-8");
+  }
+  return buf.toString("utf-8");
+}
+
 export function makeOps(root) {
   const ROOT = path.resolve(root);
 
@@ -13,14 +28,25 @@ export function makeOps(root) {
     return full;
   }
 
-  async function listFiles(subpath) {
+  async function listFiles(subpath, { recursive = false } = {}) {
     const dir = safeResolve(subpath);
     const entries = await fs.readdir(dir, { withFileTypes: true });
-    return entries.map((e) => ({ name: e.name, type: e.isDirectory() ? "dir" : "file" }));
+    if (!recursive) {
+      return entries.map((e) => ({ name: e.name, type: e.isDirectory() ? "dir" : "file" }));
+    }
+    const results = [];
+    for (const e of entries) {
+      const childSub = subpath ? `${subpath}/${e.name}` : e.name;
+      results.push({ path: childSub, type: e.isDirectory() ? "dir" : "file" });
+      if (e.isDirectory()) {
+        results.push(...(await listFiles(childSub, { recursive: true })));
+      }
+    }
+    return results;
   }
 
   async function readFile(filepath) {
-    return fs.readFile(safeResolve(filepath), "utf-8");
+    return decodeText(await fs.readFile(safeResolve(filepath)));
   }
 
   async function writeFile(filepath, content) {
@@ -83,7 +109,7 @@ export function makeOps(root) {
     for (const full of files) {
       let text;
       try {
-        text = await fs.readFile(full, "utf-8");
+        text = decodeText(await fs.readFile(full));
       } catch {
         continue;
       }
