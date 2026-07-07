@@ -1,0 +1,9 @@
+Master Hive MCP server listening on :3939
+REGISTER: {"redirect_uris":["https://claude.ai/api/mcp/auth_callback"],"token_endpoint_auth_method":"client_secret_post","grant_types":["authorization_code","refresh_token"],"response_types":["code"],"client_name":"Claude","application_type":"web"} -> issued hive-64b83c6bccd212bd26544226
+AUTHORIZE query: {"response_type":"code","client_id":"hive-64b83c6bccd212bd26544226","redirect_uri":"https://claude.ai/api/mcp/auth_callback","code_challenge":"5YbQfHqREOG_cxXkPzXzrlNHExK694M3eVMJ4t8gNJc","code_challenge_method":"S256","state":"izJWyK6BvofQ6aa170WDt7VaepWzUqMp1Lvuo4dYmZw","resource":"https://hive.incendiarynetworks.cc/mcp"}
+AUTHORIZE OK, redirecting to CF, ourState: c5854f70d9425b875056b8ffd38a4176
+CF-CALLBACK hit, state: c5854f70d9425b875056b8ffd38a4176 hasCode: true
+CF token exchange OK. authenticated as: lucaskerim@gmail.com
+CF-CALLBACK: redirecting back to caller: https://claude.ai/api/mcp/auth_callback?code=82bcef006a694be9f15a0a43fdb04a0b71a83baaba61a77f&state=izJWyK6BvofQ6aa170WDt7VaepWzUqMp1Lvuo4dYmZw
+TOKEN request grant_type: authorization_code
+TOKEN: issuing access token to caller
