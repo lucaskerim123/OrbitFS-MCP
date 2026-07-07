@@ -46,6 +46,18 @@ function sha256(input) {
   return crypto.createHash("sha256").update(input).digest();
 }
 
+// Read-only summary for the admin panel - client redirect URIs and which
+// accounts hold a refresh token, but never the actual token/secret values.
+export function getOAuthState() {
+  return {
+    clients: [...clients.entries()].map(([id, c]) => ({
+      id,
+      redirectUris: c.redirectUris,
+    })),
+    refreshTokens: [...refreshTokens.values()].map((v) => ({ email: v.email })),
+  };
+}
+
 export function mountOAuth(app, cfg) {
   const { publicBaseUrl, cfAuthEndpoint, cfTokenEndpoint, cfClientId, cfClientSecret, secretKey } = cfg;
 
