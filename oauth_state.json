@@ -1,0 +1,28 @@
+{
+  "clients": [
+    [
+      "hive-df18d860db6b4b565a342fbf",
+      {
+        "redirectUris": [
+          "https://example.com/callback"
+        ]
+      }
+    ],
+    [
+      "hive-2eb87b14c06320226e1c3cab",
+      {
+        "redirectUris": [
+          "https://claude.ai/api/mcp/auth_callback"
+        ]
+      }
+    ]
+  ],
+  "refreshTokens": [
+    [
+      "a02bf8dbcc60c59d14531b0470d069ed5687fa8a71a32fd0",
+      {
+        "email": "lucaskerim@gmail.com"
+      }
+    ]
+  ]
+}
