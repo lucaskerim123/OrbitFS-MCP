@@ -398,3 +398,17 @@
 {"ts":"2026-07-08T16:14:22.479Z","event":"http.request","rid":"44746e982570","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
 {"ts":"2026-07-08T16:14:33.870Z","event":"http.request","rid":"379dd9303c3d","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
 {"ts":"2026-07-08T16:15:03.870Z","event":"http.request","rid":"8ad7e788cd25","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T16:16:04.874Z","event":"http.request","rid":"390aea2a276e","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T16:16:23.255Z","event":"oauth.token.start","grantType":"refresh_token"}
+{"ts":"2026-07-08T16:16:23.391Z","event":"oauth.token.refresh_ok","email":"lucaskerim@gmail.com","flow":"unknown"}
+{"ts":"2026-07-08T16:16:23.673Z","event":"auth.jwt.ok","rid":"3d1cebc0694d","method":"POST","path":"/","ip":"::1","auth":"jwt","flow":"unknown","email":"lucaskerim@gmail.com"}
+{"ts":"2026-07-08T16:16:23.674Z","event":"mcp.request.start","rid":"3d1cebc0694d","method":"POST","path":"/mcp","ip":"::1","auth":"jwt","flow":"unknown","email":"lucaskerim@gmail.com","rpcMethod":"initialize","rpcId":0}
+{"ts":"2026-07-08T16:16:23.717Z","event":"http.request","rid":"3d1cebc0694d","method":"POST","path":"/mcp","ip":"::1","auth":"jwt","flow":"unknown","email":"lucaskerim@gmail.com","status":200,"ms":48}
+{"ts":"2026-07-08T16:16:24.370Z","event":"auth.jwt.ok","rid":"3cbfbaa7932c","method":"POST","path":"/","ip":"::1","auth":"jwt","flow":"unknown","email":"lucaskerim@gmail.com"}
+{"ts":"2026-07-08T16:16:24.371Z","event":"mcp.request.start","rid":"3cbfbaa7932c","method":"POST","path":"/mcp","ip":"::1","auth":"jwt","flow":"unknown","email":"lucaskerim@gmail.com","rpcMethod":"notifications/initialized"}
+{"ts":"2026-07-08T16:16:24.377Z","event":"http.request","rid":"3cbfbaa7932c","method":"POST","path":"/mcp","ip":"::1","auth":"jwt","flow":"unknown","email":"lucaskerim@gmail.com","status":202,"ms":8}
+{"ts":"2026-07-08T16:16:24.637Z","event":"auth.jwt.ok","rid":"71087bcebbda","method":"POST","path":"/","ip":"::1","auth":"jwt","flow":"unknown","email":"lucaskerim@gmail.com"}
+{"ts":"2026-07-08T16:16:24.639Z","event":"mcp.request.start","rid":"71087bcebbda","method":"POST","path":"/mcp","ip":"::1","auth":"jwt","flow":"unknown","email":"lucaskerim@gmail.com","rpcMethod":"tools/list","rpcId":1}
+{"ts":"2026-07-08T16:16:24.647Z","event":"http.request","rid":"71087bcebbda","method":"POST","path":"/mcp","ip":"::1","auth":"jwt","flow":"unknown","email":"lucaskerim@gmail.com","status":200,"ms":12}
+{"ts":"2026-07-08T16:17:05.870Z","event":"http.request","rid":"365a4952a163","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T16:17:33.198Z","event":"http.request","rid":"d6b9890fe354","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
