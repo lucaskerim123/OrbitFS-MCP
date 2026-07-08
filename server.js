@@ -1,4 +1,4 @@
-import path from "path";
+﻿import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), ".env") });
@@ -19,13 +19,46 @@ const PORT = process.env.PORT || 3939;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
 const SORT_FOLDER = "_sorter";
+const TRASH_FOLDER = "_trash";
 const SORT_MODEL = process.env.SORT_MODEL || "claude-haiku-4-5-20251001";
+const DEFAULT_TRASH_RETENTION_DAYS = Number(process.env.TRASH_RETENTION_DAYS || 4);
+const TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const FETCH_MAX_BYTES = 10 * 1024 * 1024;
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = path.join(SERVER_DIR, "logs");
 const EVENT_LOG_FILE = path.join(LOG_DIR, "master-hive-events.jsonl");
 const ERROR_LOG_FILE = path.join(LOG_DIR, "master-hive-errors.jsonl");
+const TRASH_CONFIG_FILE = path.join(SERVER_DIR, "trash-config.json");
+const FIRESTORM_STARTUP_FILES = {
+  Master: "_system/Startup/00_MASTER_STARTUP.md",
+  Court: "_system/Startup/01_COURT_SYSTEM_STARTUP.md",
+  Mental: "_system/Startup/02_MENTAL_HEALTH_SYSTEM_STARTUP.md",
+  Media: "_system/Startup/03_MEDIA_STARTUP.md",
+};
+const FIRESTORM_RULE_FILES = {
+  loadOrder: "_system/Rules/load_order.md",
+  projectRules: "_system/Rules/project_rules.md",
+  savingRules: "_system/Rules/saving_rules.md",
+  commands: "_system/Rules/commands.md",
+};
+const FIRESTORM_OPTIONAL_FILES = {
+  fileIndex: "_system/Index/file_index.json",
+};
+const FIRESTORM_PROJECT_FOLDERS = {
+  Master: ["_system", "0. Core Folder"],
+  Court: ["1. Master Court System", "3. Legal Charges - AVO"],
+  Mental: ["2. Mental Health System"],
+  Media: ["Media"],
+};
+const FIRESTORM_LOAD_ALIASES = {
+  light: "low",
+  normal: "med",
+  full: "high",
+  low: "low",
+  med: "med",
+  high: "high",
+};
 
 const ops = makeOps(ROOT);
 
@@ -43,6 +76,33 @@ function logError(event, err, fields = {}) {
 
 function requestId() {
   return crypto.randomBytes(6).toString("hex");
+}
+
+function normalizeRetentionDays(input) {
+  const value = Number(input);
+  if (!Number.isFinite(value)) throw new Error("retentionDays must be a number");
+  const rounded = Math.round(value);
+  if (rounded < 1 || rounded > 365) throw new Error("retentionDays must be between 1 and 365");
+  return rounded;
+}
+
+async function loadTrashConfig() {
+  try {
+    const raw = JSON.parse(await fs.readFile(TRASH_CONFIG_FILE, "utf-8"));
+    return { retentionDays: normalizeRetentionDays(raw?.retentionDays ?? DEFAULT_TRASH_RETENTION_DAYS) };
+  } catch (err) {
+    if (err.code === "ENOENT" || err instanceof SyntaxError) {
+      return { retentionDays: DEFAULT_TRASH_RETENTION_DAYS };
+    }
+    throw err;
+  }
+}
+
+async function saveTrashConfig(retentionDays) {
+  const normalized = normalizeRetentionDays(retentionDays);
+  const config = { retentionDays: normalized };
+  await fs.writeFile(TRASH_CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
+  return config;
 }
 
 function requestContext(req) {
@@ -74,7 +134,7 @@ async function listFolderTree(base, depth, out) {
   const entries = await ops.listFiles(base);
   for (const e of entries) {
     if (e.type !== "dir") continue;
-    if (base === "" && e.name === SORT_FOLDER) continue;
+    if (base === "" && (e.name === SORT_FOLDER || e.name === TRASH_FOLDER)) continue;
     const rel = base ? `${base}/${e.name}` : e.name;
     out.push(rel);
     if (out.length >= 400) return out;
@@ -173,6 +233,224 @@ async function applySortMoves(moves, authContext = {}) {
 
   logEvent("tool.sort_inbox.applied", { ...authContext, movedCount: moved.length, errorCount: errors.length });
   return { moved, errors };
+}
+
+function normalizeRelativePath(input = "") {
+  return String(input || "").replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+function isTrashPath(relPath = "") {
+  return normalizeRelativePath(relPath) === TRASH_FOLDER || normalizeRelativePath(relPath).startsWith(`${TRASH_FOLDER}/`);
+}
+
+function trashEntryPrefix() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+async function movePathToTrash(filepath, authContext = {}) {
+  const normalized = normalizeRelativePath(filepath);
+  if (!normalized) throw new Error("Path is required");
+  if (isTrashPath(normalized)) throw new Error("Path is already inside _trash");
+  const stamp = `${trashEntryPrefix()}-${crypto.randomBytes(3).toString("hex")}`;
+  const destination = `${TRASH_FOLDER}/${stamp}/${normalized}`;
+  await ops.moveFile(normalized, destination);
+  logEvent("file.change.trash", { ...authContext, source: authContext.source || "api", from: normalized, to: destination });
+  return { from: normalized, to: destination };
+}
+
+async function emptyTrash(authContext = {}) {
+  let entries;
+  try {
+    entries = await ops.listFiles(TRASH_FOLDER, { recursive: false });
+  } catch (err) {
+    if (err.code === "ENOENT") return { deleted: [], deletedCount: 0, note: "_trash does not exist." };
+    throw err;
+  }
+
+  const deleted = [];
+  for (const entry of entries) {
+    const target = `${TRASH_FOLDER}/${entry.name}`;
+    await ops.deleteFile(target);
+    deleted.push(target);
+  }
+
+  logEvent("file.change.empty_trash", { ...authContext, source: authContext.source || "api", deletedCount: deleted.length });
+  return { deleted, deletedCount: deleted.length };
+}
+
+async function purgeExpiredTrash(authContext = {}) {
+  let entries;
+  try {
+    entries = await ops.listFiles(TRASH_FOLDER, { recursive: false });
+  } catch (err) {
+    if (err.code === "ENOENT") return { deleted: [], deletedCount: 0, note: "_trash does not exist." };
+    throw err;
+  }
+
+  const { retentionDays } = await loadTrashConfig();
+  const cutoff = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
+  const deleted = [];
+
+  for (const entry of entries) {
+    const relPath = `${TRASH_FOLDER}/${entry.name}`;
+    let stat;
+    try {
+      stat = await fs.stat(ops.safeResolve(relPath));
+    } catch (err) {
+      if (err.code === "ENOENT") continue;
+      throw err;
+    }
+    if (stat.mtimeMs > cutoff) continue;
+    await ops.deleteFile(relPath);
+    deleted.push(relPath);
+  }
+
+  if (deleted.length) {
+    logEvent("file.change.trash_autopurge", {
+      ...authContext,
+      source: authContext.source || "scheduler",
+      deletedCount: deleted.length,
+      retentionDays,
+    });
+  }
+  return { deleted, deletedCount: deleted.length, retentionDays };
+}
+
+function parseStartupProjects(input = "Master") {
+  const requested = String(input || "Master")
+    .split(":")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const deduped = [];
+  for (const raw of requested.length ? requested : ["Master"]) {
+    const matched = Object.keys(FIRESTORM_STARTUP_FILES).find((name) => name.toLowerCase() === raw.toLowerCase());
+    if (!matched) {
+      throw new Error(`Unknown startup project "${raw}". Use Master, Court, Mental, Media, or combine with ":".`);
+    }
+    if (matched !== "Master" && !deduped.includes("Master")) deduped.push("Master");
+    if (!deduped.includes(matched)) deduped.push(matched);
+  }
+  return deduped.length ? deduped : ["Master"];
+}
+
+function parseStartupLoadLevel(input = "med") {
+  const normalized = FIRESTORM_LOAD_ALIASES[String(input || "med").trim().toLowerCase()];
+  if (!normalized) {
+    throw new Error(`Unknown startup load level "${input}". Use low, med, high, or aliases light/normal/full.`);
+  }
+  return normalized;
+}
+
+function isArchivePath(relPath = "") {
+  return relPath.split("/").some((part) => part.toLowerCase() === "archive");
+}
+
+function summarizeEntries(entries, prefix = "") {
+  return entries.length
+    ? entries.map((e) => `${prefix}${e.type === "dir" ? "[DIR]" : "[FILE]"} ${e.path ?? e.name}`).join("\n")
+    : `${prefix}(empty)`;
+}
+
+async function readOptionalFile(filepath) {
+  try {
+    return await ops.readFile(filepath);
+  } catch (err) {
+    if (err.code === "ENOENT") return null;
+    throw err;
+  }
+}
+
+function buildFirestormRuleFiles() {
+  return [
+    FIRESTORM_RULE_FILES.loadOrder,
+    FIRESTORM_RULE_FILES.projectRules,
+    FIRESTORM_RULE_FILES.savingRules,
+    FIRESTORM_RULE_FILES.commands,
+  ];
+}
+
+async function buildFirestormStartup(projectsInput, loadInput, authContext = {}) {
+  const projects = parseStartupProjects(projectsInput);
+  const load = parseStartupLoadLevel(loadInput);
+  const startupFiles = [...new Set(projects.map((name) => FIRESTORM_STARTUP_FILES[name]))];
+  const ruleFiles = buildFirestormRuleFiles();
+  const optionalFiles = [FIRESTORM_OPTIONAL_FILES.fileIndex];
+  const folders = [...new Set(projects.flatMap((name) => FIRESTORM_PROJECT_FOLDERS[name] || []))]
+    .filter((folder) => !isArchivePath(folder));
+
+  const sections = [
+    `Command: /startup ${projects.join(":")} ${load}`,
+    `Projects: ${projects.join(", ")}`,
+    `Load level: ${load}`,
+    "",
+    "Loaded startup files:",
+    ...startupFiles.map((f) => `- ${f}`),
+  ];
+
+  for (const file of startupFiles) {
+    const content = await ops.readFile(file);
+    sections.push("", `===== ${file} =====`, content.trim());
+  }
+
+  sections.push("", "Loaded rule files:", ...ruleFiles.map((f) => `- ${f}`));
+  for (const file of ruleFiles) {
+    const content = await ops.readFile(file);
+    sections.push("", `===== ${file} =====`, content.trim());
+  }
+
+  for (const file of optionalFiles) {
+    const content = await readOptionalFile(file);
+    if (content === null) continue;
+    sections.push("", "Loaded optional files:", `- ${file}`, "", `===== ${file} =====`, content.trim());
+  }
+
+  if (load !== "low") {
+    sections.push("", "Relevant folders in scope:");
+    for (const folder of folders) {
+      try {
+        const entries = (await ops.listFiles(folder, { recursive: false }))
+          .filter((entry) => !isArchivePath(`${folder}/${entry.name}`));
+        sections.push("", `===== ${folder} =====`, summarizeEntries(entries, "  "));
+        if (load === "high") {
+          const childDirs = entries
+            .filter((e) => e.type === "dir")
+            .map((e) => `${folder}/${e.name}`)
+            .filter((childDir) => !isArchivePath(childDir));
+          for (const childDir of childDirs) {
+            try {
+              const childEntries = (await ops.listFiles(childDir, { recursive: false }))
+                .filter((entry) => !isArchivePath(`${childDir}/${entry.name}`));
+              sections.push("", `--- ${childDir} ---`, summarizeEntries(childEntries, "    "));
+            } catch {}
+          }
+        }
+      } catch (err) {
+        sections.push("", `===== ${folder} =====`, `(unavailable: ${err.message})`);
+      }
+    }
+  }
+
+  const confirmations = projects
+    .filter((name) => name !== "Master")
+    .map((name) => {
+      if (name === "Court") return "Court System active. Startup loaded. Ready.";
+      if (name === "Mental") return "Mental Health System active. Startup loaded. Ready.";
+      if (name === "Media") return "Media startup loaded. Ready.";
+      return "Master startup loaded. Ready.";
+    });
+  if (projects.length === 1 && projects[0] === "Master") confirmations.push("Master startup loaded. Ready.");
+
+  sections.push("", "Confirmation:", ...confirmations);
+  logEvent("tool.startup_firestorm.ok", {
+    ...authContext,
+    projects: projects.join(":"),
+    load,
+    startupFiles: startupFiles.length,
+    ruleFiles: ruleFiles.length,
+    optionalFiles: optionalFiles.length,
+    folders: folders.length,
+  });
+  return sections.join("\n");
 }
 
 function buildServer(authContext = {}) {
@@ -336,6 +614,57 @@ function buildServer(authContext = {}) {
       if (errors.length) lines.push("", "Could not classify:", ...errors.map((e) => `${e.item}: ${e.error}`));
       lines.push("", "Nothing has moved yet. Confirm with the user, then call apply_sort_inbox with the item/destination pairs they approve.");
       return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  );
+
+  server.tool(
+    "startup_firestorm",
+    "Hardcoded Project FireStorm startup command. Equivalent to /startup <project> <low|med|high>. Loads the correct startup files, rule files, and relevant folder listings without making any changes.",
+    {
+      project: z.string().describe("Project name or combined projects separated with ':'. Use Master, Court, Mental, Media, or combinations like Court:Mental"),
+      load_level: z.string().optional().describe("low, med, high. Also accepts aliases: light, normal, full"),
+    },
+    async ({ project, load_level }) => {
+      logEvent("tool.startup_firestorm.start", { ...authContext, project, load: load_level || "med" });
+      const text = await buildFirestormStartup(project, load_level || "med", authContext);
+      return { content: [{ type: "text", text }] };
+    }
+  );
+
+  server.tool(
+    "move_to_trash",
+    `Move a file or folder into "${TRASH_FOLDER}" instead of permanently deleting it. The original relative path is preserved under a timestamped trash entry.`,
+    { filepath: z.string().describe("Relative path to move into _trash") },
+    async ({ filepath }) => {
+      logEvent("tool.move_to_trash.start", { ...authContext, filepath });
+      const result = await movePathToTrash(filepath, { ...authContext, source: "mcp_tool" });
+      return { content: [{ type: "text", text: `Moved ${result.from} -> ${result.to}` }] };
+    }
+  );
+
+  server.tool(
+    "empty_trash",
+    `Permanently delete everything currently inside "${TRASH_FOLDER}". Use this only after explicit user confirmation.`,
+    {},
+    async () => {
+      logEvent("tool.empty_trash.start", authContext);
+      const result = await emptyTrash({ ...authContext, source: "mcp_tool" });
+      return {
+        content: [{
+          type: "text",
+          text: result.deletedCount ? `Deleted ${result.deletedCount} trash entr${result.deletedCount === 1 ? "y" : "ies"}.` : "Trash is already empty.",
+        }],
+      };
+    }
+  );
+
+  server.tool(
+    "get_trash_config",
+    `Get the current auto-purge retention for "${TRASH_FOLDER}".`,
+    {},
+    async () => {
+      const config = await loadTrashConfig();
+      return { content: [{ type: "text", text: JSON.stringify(config, null, 2) }] };
     }
   );
 
@@ -604,7 +933,66 @@ app.post("/api/sort/apply", async (req, res) => {
   }
 });
 
+app.post("/api/trash", async (req, res) => {
+  try {
+    const result = await movePathToTrash(req.body?.path, { ...requestContext(req), source: "rest_api" });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    logError("api.trash.move.failed", err, { ...requestContext(req), path: req.body?.path });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/trash/empty", async (req, res) => {
+  try {
+    const result = await emptyTrash({ ...requestContext(req), source: "rest_api" });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    logError("api.trash.empty.failed", err, requestContext(req));
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/api/trash/config", async (req, res) => {
+  try {
+    res.json(await loadTrashConfig());
+  } catch (err) {
+    logError("api.trash.config.read.failed", err, requestContext(req));
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/trash/config", async (req, res) => {
+  try {
+    const config = await saveTrashConfig(req.body?.retentionDays);
+    logEvent("api.trash.config.updated", { ...requestContext(req), retentionDays: config.retentionDays });
+    res.json({ ok: true, ...config });
+  } catch (err) {
+    logError("api.trash.config.update.failed", err, { ...requestContext(req), retentionDays: req.body?.retentionDays });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/startup", async (req, res) => {
+  try {
+    const text = await buildFirestormStartup(req.body?.project || "Master", req.body?.load_level || "med", {
+      ...requestContext(req),
+      source: "rest_api",
+    });
+    logEvent("api.startup.ok", { ...requestContext(req), project: req.body?.project || "Master", load: req.body?.load_level || "med" });
+    res.json({ text });
+  } catch (err) {
+    logError("api.startup.failed", err, { ...requestContext(req), project: req.body?.project, load: req.body?.load_level });
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, async () => {
   await fs.mkdir(LOG_DIR, { recursive: true }).catch(() => {});
+  purgeExpiredTrash({ source: "startup" }).catch((err) => logError("trash.autopurge.startup.failed", err));
+  setInterval(() => {
+    purgeExpiredTrash({ source: "interval" }).catch((err) => logError("trash.autopurge.interval.failed", err));
+  }, TRASH_PURGE_INTERVAL_MS).unref();
   logEvent("server.start", { port: PORT, root: ROOT, publicBaseUrl: PUBLIC_BASE_URL });
 });
+

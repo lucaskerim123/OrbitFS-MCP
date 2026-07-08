@@ -1,4 +1,4 @@
-openapi: 3.1.0
+﻿openapi: 3.1.0
 info:
   title: Master Hive Full Actions
   version: 1.0.0
@@ -65,6 +65,43 @@ components:
           type: boolean
       required:
         - ok
+    TrashMoveResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        from:
+          type: string
+        to:
+          type: string
+      required:
+        - ok
+        - from
+        - to
+    TrashEmptyResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        deleted:
+          type: array
+          items:
+            type: string
+        deletedCount:
+          type: integer
+      required:
+        - ok
+        - deleted
+        - deletedCount
+    TrashConfigResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        retentionDays:
+          type: integer
+      required:
+        - retentionDays
     ErrorResponse:
       type: object
       properties:
@@ -72,6 +109,13 @@ components:
           type: string
       required:
         - error
+    StartupResponse:
+      type: object
+      properties:
+        text:
+          type: string
+      required:
+        - text
 security:
   - bearerAuth: []
 paths:
@@ -236,6 +280,88 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OkResponse"
+  /api/trash:
+    post:
+      operationId: moveToTrash
+      summary: Move a file or folder into _trash.
+      description: Admin action. Safer than deleteFile for normal user-facing deletes because it preserves the original relative path under a timestamped trash entry.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                  description: Relative file or folder path to move into _trash.
+              required:
+                - path
+      responses:
+        "200":
+          description: Trash move result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrashMoveResponse"
+  /api/trash/empty:
+    post:
+      operationId: emptyTrash
+      summary: Permanently delete everything currently inside _trash.
+      description: High-risk admin action. Require explicit user confirmation before use.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      responses:
+        "200":
+          description: Trash empty result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrashEmptyResponse"
+  /api/trash/config:
+    get:
+      operationId: getTrashConfig
+      summary: Get the current _trash auto-purge retention.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      responses:
+        "200":
+          description: Current trash retention config.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrashConfigResponse"
+    post:
+      operationId: setTrashConfig
+      summary: Update the _trash auto-purge retention.
+      description: Admin action. Require explicit user confirmation before use.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retentionDays:
+                  type: integer
+                  description: Number of days to keep trash entries before auto-purge.
+              required:
+                - retentionDays
+      responses:
+        "200":
+          description: Updated trash retention config.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/TrashConfigResponse"
+                  - type: object
+                    required:
+                      - ok
   /api/mkdir:
     post:
       operationId: createFolder
@@ -317,6 +443,35 @@ paths:
                 required:
                   - ok
                   - bytes
+  /api/startup:
+    post:
+      operationId: startupFirestorm
+      summary: Load hardcoded Project FireStorm startup context.
+      description: Equivalent to `/startup <project> <low|med|high>`. Read-only. Loads FireStorm startup files, the full startup rule set, `_system/Index/file_index.json` when present, and relevant folder listings while excluding Archive folders from startup scope unless explicitly requested.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project:
+                  type: string
+                  description: Master, Court, Mental, Media, or combined with `:` such as `Court:Mental`.
+                load_level:
+                  type: string
+                  description: low, med, high. Also accepts light, normal, full.
+              required:
+                - project
+      responses:
+        "200":
+          description: Startup context payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartupResponse"
   /api/oauth-state:
     get:
       operationId: getOAuthState
@@ -475,3 +630,4 @@ paths:
                 required:
                   - moved
                   - errors
+
