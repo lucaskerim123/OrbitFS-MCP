@@ -18,3 +18,4 @@ out.log
 logs/master-hive-events.jsonl
 /logs
 out.log
+logs/master-hive-events.jsonl
