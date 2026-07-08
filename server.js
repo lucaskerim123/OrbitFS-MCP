@@ -297,12 +297,27 @@ function buildServer(authContext = {}) {
     },
     async ({ url, filepath }) => {
       logEvent("tool.fetch_url_to_file.start", { ...authContext, url, filepath });
-      const resp = await fetch(url, { redirect: "follow" });
+      const controller = new AbortController();
+      const resp = await fetch(url, { redirect: "follow", signal: controller.signal });
       if (!resp.ok) throw new Error(`Fetch failed: ${resp.status} ${resp.statusText}`);
-      const buf = Buffer.from(await resp.arrayBuffer());
-      if (buf.length > FETCH_MAX_BYTES) {
-        throw new Error(`Response too large (${buf.length} bytes, max ${FETCH_MAX_BYTES})`);
+      const reader = resp.body.getReader();
+      const chunks = [];
+      let total = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.length;
+          if (total > FETCH_MAX_BYTES) {
+            controller.abort();
+            throw new Error(`Response too large (over ${FETCH_MAX_BYTES} bytes, aborted mid-download)`);
+          }
+          chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock?.();
       }
+      const buf = Buffer.concat(chunks.map((c) => Buffer.from(c)));
       await ops.writeFile(filepath, buf.toString("utf-8"));
       logEvent("file.change.write", { ...authContext, source: "mcp_tool_fetch_url", filepath, bytes: buf.length, url });
       return { content: [{ type: "text", text: `Saved ${buf.length} bytes from ${url} to ${filepath}` }] };
