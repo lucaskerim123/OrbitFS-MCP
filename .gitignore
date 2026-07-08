@@ -12,3 +12,4 @@ out.log
 out.log
 logs/master-hive-errors.jsonl
 logs/master-hive-events.jsonl
+/logs
