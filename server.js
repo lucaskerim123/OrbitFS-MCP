@@ -19,7 +19,19 @@ const PORT = process.env.PORT || 3939;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
 const SORT_FOLDER = "_sorter";
-const TRASH_FOLDER = "_trash";
+const TRASH_FOLDER = "🗑 Trash";
+const LEGACY_TRASH_FOLDERS = ["_trash"];
+const PROTECTED_ROOT_FOLDERS = new Set([
+  "_system",
+  "_sorter",
+  "🗑 Trash",
+  "_trash",
+  "0. Core Folder",
+  "1. Master Court System",
+  "2. Mental Health System",
+  "3. Legal Charges - AVO",
+  "Media",
+]);
 const SORT_MODEL = process.env.SORT_MODEL || "claude-haiku-4-5-20251001";
 const DEFAULT_TRASH_RETENTION_DAYS = Number(process.env.TRASH_RETENTION_DAYS || 4);
 const TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -127,6 +139,11 @@ function summarizeMcpBody(body) {
   };
 }
 
+function filterLegacyTopLevelEntries(subpath = "", entries = []) {
+  if (normalizeRelativePath(subpath)) return entries;
+  return entries.filter((entry) => !LEGACY_TRASH_FOLDERS.includes(entry.name));
+}
+
 // Directory-only listing used to give the sorter model a map of where things
 // could go. Capped in depth and count so the prompt stays small.
 async function listFolderTree(base, depth, out) {
@@ -134,7 +151,7 @@ async function listFolderTree(base, depth, out) {
   const entries = await ops.listFiles(base);
   for (const e of entries) {
     if (e.type !== "dir") continue;
-    if (base === "" && (e.name === SORT_FOLDER || e.name === TRASH_FOLDER)) continue;
+    if (base === "" && (e.name === SORT_FOLDER || e.name === TRASH_FOLDER || LEGACY_TRASH_FOLDERS.includes(e.name))) continue;
     const rel = base ? `${base}/${e.name}` : e.name;
     out.push(rel);
     if (out.length >= 400) return out;
@@ -240,7 +257,21 @@ function normalizeRelativePath(input = "") {
 }
 
 function isTrashPath(relPath = "") {
-  return normalizeRelativePath(relPath) === TRASH_FOLDER || normalizeRelativePath(relPath).startsWith(`${TRASH_FOLDER}/`);
+  const normalized = normalizeRelativePath(relPath);
+  return [TRASH_FOLDER, ...LEGACY_TRASH_FOLDERS].some((folder) => normalized === folder || normalized.startsWith(`${folder}/`));
+}
+
+function isProtectedRootFolderPath(relPath = "") {
+  return PROTECTED_ROOT_FOLDERS.has(normalizeRelativePath(relPath));
+}
+
+function assertMutablePath(relPath = "", action = "modify") {
+  const normalized = normalizeRelativePath(relPath);
+  if (!normalized) throw new Error("Path is required");
+  if (isProtectedRootFolderPath(normalized)) {
+    throw new Error(`Cannot ${action} protected root folder "${normalized}"`);
+  }
+  return normalized;
 }
 
 function trashEntryPrefix() {
@@ -248,9 +279,8 @@ function trashEntryPrefix() {
 }
 
 async function movePathToTrash(filepath, authContext = {}) {
-  const normalized = normalizeRelativePath(filepath);
-  if (!normalized) throw new Error("Path is required");
-  if (isTrashPath(normalized)) throw new Error("Path is already inside _trash");
+  const normalized = assertMutablePath(filepath, "trash");
+  if (isTrashPath(normalized)) throw new Error(`Path is already inside ${TRASH_FOLDER}`);
   const stamp = `${trashEntryPrefix()}-${crypto.randomBytes(3).toString("hex")}`;
   const destination = `${TRASH_FOLDER}/${stamp}/${normalized}`;
   await ops.moveFile(normalized, destination);
@@ -263,7 +293,7 @@ async function emptyTrash(authContext = {}) {
   try {
     entries = await ops.listFiles(TRASH_FOLDER, { recursive: false });
   } catch (err) {
-    if (err.code === "ENOENT") return { deleted: [], deletedCount: 0, note: "_trash does not exist." };
+    if (err.code === "ENOENT") return { deleted: [], deletedCount: 0, note: `${TRASH_FOLDER} does not exist.` };
     throw err;
   }
 
@@ -283,7 +313,7 @@ async function purgeExpiredTrash(authContext = {}) {
   try {
     entries = await ops.listFiles(TRASH_FOLDER, { recursive: false });
   } catch (err) {
-    if (err.code === "ENOENT") return { deleted: [], deletedCount: 0, note: "_trash does not exist." };
+    if (err.code === "ENOENT") return { deleted: [], deletedCount: 0, note: `${TRASH_FOLDER} does not exist.` };
     throw err;
   }
 
@@ -465,7 +495,8 @@ function buildServer(authContext = {}) {
     },
     async ({ subpath, recursive }) => {
       logEvent("tool.list_files.start", { ...authContext, subpath: subpath || "", recursive: !!recursive });
-      const entries = await ops.listFiles(subpath, { recursive });
+      let entries = await ops.listFiles(subpath, { recursive });
+      if (!recursive) entries = filterLegacyTopLevelEntries(subpath, entries);
       const listing = entries.map((e) => (e.type === "dir" ? "[DIR] " : "[FILE] ") + (e.path ?? e.name)).join("\n");
       logEvent("tool.list_files.ok", { ...authContext, subpath: subpath || "", recursive: !!recursive, count: entries.length });
       return { content: [{ type: "text", text: listing || "(empty)" }] };
@@ -505,7 +536,7 @@ function buildServer(authContext = {}) {
     { filepath: z.string().describe("Relative path to the file") },
     async ({ filepath }) => {
       logEvent("tool.delete_file.start", { ...authContext, filepath });
-      await ops.deleteFile(filepath);
+      await ops.deleteFile(assertMutablePath(filepath, "delete"));
       logEvent("file.change.delete", { ...authContext, source: "mcp_tool", filepath });
       return { content: [{ type: "text", text: `Deleted ${filepath}` }] };
     }
@@ -520,6 +551,7 @@ function buildServer(authContext = {}) {
     },
     async ({ from, to }) => {
       logEvent("tool.move_file.start", { ...authContext, from, to });
+      assertMutablePath(from, "move");
       await ops.moveFile(from, to);
       logEvent("file.change.move", { ...authContext, source: "mcp_tool", from, to });
       return { content: [{ type: "text", text: `Moved ${from} -> ${to}` }] };
@@ -809,7 +841,8 @@ app.get("/api/manifest", async (req, res) => {
 app.get("/api/files", async (req, res) => {
   try {
     const dir = ops.safeResolve(req.query.subpath);
-    const entries = await fs.readdir(dir, { withFileTypes: true });
+    let entries = await fs.readdir(dir, { withFileTypes: true });
+    entries = filterLegacyTopLevelEntries(req.query.subpath, entries);
     const withStats = await Promise.all(
       entries.map(async (e) => {
         if (e.isDirectory()) return { name: e.name, type: "dir" };
@@ -849,7 +882,7 @@ app.put("/api/file", async (req, res) => {
 
 app.delete("/api/file", async (req, res) => {
   try {
-    await ops.deleteFile(req.query.path);
+    await ops.deleteFile(assertMutablePath(req.query.path, "delete"));
     logEvent("file.change.delete", { ...requestContext(req), source: "rest_api", path: req.query.path });
     res.json({ ok: true });
   } catch (err) {
@@ -860,6 +893,7 @@ app.delete("/api/file", async (req, res) => {
 
 app.post("/api/move", async (req, res) => {
   try {
+    assertMutablePath(req.body.from, "move");
     await ops.moveFile(req.body.from, req.body.to);
     logEvent("file.change.move", { ...requestContext(req), source: "rest_api", from: req.body.from, to: req.body.to });
     res.json({ ok: true });
