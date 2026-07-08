@@ -357,3 +357,121 @@ paths:
                 required:
                   - clients
                   - refreshTokens
+  /api/sort/preview:
+    post:
+      operationId: previewSortInbox
+      summary: Preview where each item in the _sorter staging folder would go.
+      description: Read-only dry run - does not move anything. Show the proposed destinations to the user before calling applySortInbox.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      responses:
+        "200":
+          description: Proposed destinations, and any items that could not be classified.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proposals:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        item:
+                          type: string
+                        isDir:
+                          type: boolean
+                        destination:
+                          type: string
+                        isNewFolder:
+                          type: boolean
+                        reason:
+                          type: string
+                      required:
+                        - item
+                        - destination
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        item:
+                          type: string
+                        error:
+                          type: string
+                      required:
+                        - item
+                        - error
+                  note:
+                    type: string
+                required:
+                  - proposals
+                  - errors
+  /api/sort/apply:
+    post:
+      operationId: applySortInbox
+      summary: Move confirmed items out of _sorter to their approved destinations.
+      description: Admin action. Only call this after previewSortInbox and explicit user confirmation of each destination - do not guess destinations here.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                moves:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      item:
+                        type: string
+                        description: Name of the file/folder inside _sorter to move.
+                      destination:
+                        type: string
+                        description: Confirmed destination folder (relative path, no leading/trailing slash).
+                    required:
+                      - item
+                      - destination
+              required:
+                - moves
+      responses:
+        "200":
+          description: Move results, and any items that failed to move.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  moved:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        item:
+                          type: string
+                        from:
+                          type: string
+                        to:
+                          type: string
+                      required:
+                        - item
+                        - from
+                        - to
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        item:
+                          type: string
+                        error:
+                          type: string
+                      required:
+                        - item
+                        - error
+                required:
+                  - moved
+                  - errors
