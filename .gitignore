@@ -16,3 +16,5 @@ logs/master-hive-events.jsonl
 logs/master-hive-events.jsonl
 out.log
 logs/master-hive-events.jsonl
+/logs
+out.log
