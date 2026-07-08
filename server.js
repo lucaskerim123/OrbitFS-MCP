@@ -9,6 +9,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { jwtVerify } from "jose";
+import Anthropic from "@anthropic-ai/sdk";
 import { mountOAuth, getOAuthState } from "./oauth.js";
 
 const ROOT = process.env.HIVE_ROOT;
@@ -16,6 +17,9 @@ const API_KEY = process.env.HIVE_API_KEY;
 const PORT = process.env.PORT || 3939;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
+const SORT_FOLDER = "_sorter";
+const SORT_MODEL = process.env.SORT_MODEL || "claude-haiku-4-5-20251001";
+const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = path.join(SERVER_DIR, "logs");
 const EVENT_LOG_FILE = path.join(LOG_DIR, "master-hive-events.jsonl");
@@ -119,6 +123,89 @@ async function listManifest(dir, base) {
   return out;
 }
 
+// Directory-only listing used to give the sorter model a map of where things
+// could go. Capped in depth and count so the prompt stays small.
+async function listFolderTree(dir, base, depth, out) {
+  if (depth <= 0) return out;
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    if (base === "" && e.name === SORT_FOLDER) continue;
+    const rel = base ? `${base}/${e.name}` : e.name;
+    out.push(rel);
+    if (out.length >= 400) return out;
+    await listFolderTree(path.join(dir, e.name), rel, depth - 1, out);
+  }
+  return out;
+}
+
+async function classifyDestination(itemName, isDir, folders) {
+  if (!anthropic) {
+    throw new Error("ANTHROPIC_API_KEY is not configured on the Hive server, so sort_inbox can't ask the model for a destination.");
+  }
+  const prompt = [
+    `You are filing an item out of a personal file store's "${SORT_FOLDER}" staging folder into its real home.`,
+    `Item to file: "${itemName}" (${isDir ? "folder" : "file"}).`,
+    `Existing folders in the store (relative paths, top-level first):`,
+    folders.length ? folders.map((f) => `- ${f}`).join("\n") : "(store is empty, no existing folders yet)",
+    ``,
+    `Pick the single best destination folder for this item. Prefer an existing folder that clearly matches over inventing a new one. If nothing fits, propose a short, sensible new top-level (or nested, e.g. "Documents/Invoices") folder name.`,
+    `Respond with ONLY compact JSON, no prose, no markdown fences: {"destination": "<folder path, no leading/trailing slash>", "isNew": true|false, "reason": "<one short sentence>"}`,
+  ].join("\n");
+
+  const msg = await anthropic.messages.create({
+    model: SORT_MODEL,
+    max_tokens: 300,
+    messages: [{ role: "user", content: prompt }],
+  });
+  const text = msg.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error(`Sorter model returned an unparseable response: ${text.slice(0, 200)}`);
+  const parsed = JSON.parse(match[0]);
+  if (!parsed.destination || typeof parsed.destination !== "string") {
+    throw new Error("Sorter model response missing a destination");
+  }
+  return parsed;
+}
+
+async function sortInbox(authContext = {}) {
+  const inboxDir = safeResolve(SORT_FOLDER);
+  let entries;
+  try {
+    entries = await fs.readdir(inboxDir, { withFileTypes: true });
+  } catch (err) {
+    if (err.code === "ENOENT") return { moved: [], errors: [], note: `No ${SORT_FOLDER} folder yet - nothing to sort.` };
+    throw err;
+  }
+
+  const folders = await listFolderTree(safeResolve(""), "", 4, []);
+  const moved = [];
+  const errors = [];
+
+  for (const e of entries) {
+    const itemName = e.name;
+    try {
+      logEvent("tool.sort_inbox.item.start", { ...authContext, item: itemName });
+      const { destination, isNew, reason } = await classifyDestination(itemName, e.isDirectory(), folders);
+      const from = `${SORT_FOLDER}/${itemName}`;
+      const to = `${destination}/${itemName}`;
+      const src = safeResolve(from);
+      const dest = safeResolve(to);
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.rename(src, dest);
+      logEvent("file.change.move", { ...authContext, source: "sort_inbox", from, to, isNew: !!isNew, reason });
+      moved.push({ item: itemName, from, to, isNewFolder: !!isNew, reason });
+      if (isNew) folders.push(destination);
+    } catch (err) {
+      logError("tool.sort_inbox.item.failed", err, { ...authContext, item: itemName });
+      errors.push({ item: itemName, error: err.message });
+    }
+  }
+
+  logEvent("tool.sort_inbox.done", { ...authContext, movedCount: moved.length, errorCount: errors.length });
+  return { moved, errors };
+}
+
 function buildServer(authContext = {}) {
   const server = new McpServer({ name: "master-hive", version: "1.0.0" });
 
@@ -206,6 +293,20 @@ function buildServer(authContext = {}) {
       await fs.rename(src, dest);
       logEvent("file.change.move", { ...authContext, source: "mcp_tool", from, to });
       return { content: [{ type: "text", text: `Moved ${from} -> ${to}` }] };
+    }
+  );
+
+  server.tool(
+    "sort_inbox",
+    `Sort everything sitting in the "${SORT_FOLDER}" staging folder into its real home elsewhere in the Master Hive store. Asks the model to pick the best matching existing folder (or a sensible new one) for each item, then moves it there.`,
+    {},
+    async () => {
+      logEvent("tool.sort_inbox.start", authContext);
+      const { moved, errors, note } = await sortInbox(authContext);
+      if (note) return { content: [{ type: "text", text: note }] };
+      const lines = moved.map((m) => `${m.item} -> ${m.to}${m.isNewFolder ? " (new folder)" : ""} - ${m.reason}`);
+      if (errors.length) lines.push("", "Errors:", ...errors.map((e) => `${e.item}: ${e.error}`));
+      return { content: [{ type: "text", text: lines.join("\n") || "Nothing to sort." }] };
     }
   );
 
@@ -397,6 +498,17 @@ app.post("/api/move", async (req, res) => {
   } catch (err) {
     logError("api.move.failed", err, { ...requestContext(req), from: req.body?.from, to: req.body?.to });
     res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/sort", async (req, res) => {
+  try {
+    const result = await sortInbox({ ...requestContext(req), source: "rest_api" });
+    logEvent("api.sort.ok", { ...requestContext(req), movedCount: result.moved.length, errorCount: result.errors.length });
+    res.json(result);
+  } catch (err) {
+    logError("api.sort.failed", err, requestContext(req));
+    res.status(500).json({ error: err.message });
   }
 });
 
