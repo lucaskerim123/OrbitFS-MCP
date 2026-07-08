@@ -1,6 +1,6 @@
-# Claude Client Lane
+﻿# Claude Client Lane
 
-This folder is for notes and local setup details specific to the Claude client connection.
+This folder contains Claude-specific notes for the shared Hive connection.
 
 The MCP server is still shared:
 
@@ -9,4 +9,10 @@ The MCP server is still shared:
 - Tool implementation: `..\server.js`
 - OAuth implementation: `..\oauth.js`
 
-Keep only client-specific connection notes here. Do not put Hive content files or Claude instruction files in this folder.
+Keep only Claude client notes here. Do not put Hive content files or Claude instruction files in this folder.
+
+## Scope
+
+- Claude and ChatGPT both use the same Hive server
+- File content lives in `C:\Project FireStorm\The Master Hive`
+- Protected roots and trash behavior are enforced by the server, not by the client

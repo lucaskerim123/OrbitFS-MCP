@@ -951,3 +951,254 @@
 {"ts":"2026-07-08T19:01:53.116Z","event":"http.request","rid":"6519af8dedaf","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
 {"ts":"2026-07-08T19:02:23.118Z","event":"http.request","rid":"cb40b850551b","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
 {"ts":"2026-07-08T19:02:53.114Z","event":"http.request","rid":"c86be3ddc438","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:03:23.112Z","event":"http.request","rid":"6e8ce57be3e6","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:03:53.124Z","event":"http.request","rid":"d65b61dbe6de","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:04:23.115Z","event":"http.request","rid":"52e22e883f04","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:04:53.120Z","event":"http.request","rid":"410cb04a21f3","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:05:00.664Z","event":"auth.jwt.ok","rid":"9b9881a1ff74","method":"POST","path":"/","ip":"::1","auth":"jwt","flow":"chatgpt","email":"lucaskerim@gmail.com"}
+{"ts":"2026-07-08T19:05:00.665Z","event":"mcp.request.start","rid":"9b9881a1ff74","method":"POST","path":"/mcp","ip":"::1","auth":"jwt","flow":"chatgpt","email":"lucaskerim@gmail.com","rpcMethod":"tools/call","rpcId":0,"tool":"list_files"}
+{"ts":"2026-07-08T19:05:00.681Z","event":"tool.list_files.start","type":"jwt","flow":"chatgpt","email":"lucaskerim@gmail.com","subpath":"","recursive":true}
+{"ts":"2026-07-08T19:05:00.687Z","event":"http.request","rid":"9b9881a1ff74","method":"POST","path":"/mcp","ip":"::1","auth":"jwt","flow":"chatgpt","email":"lucaskerim@gmail.com","status":200,"ms":26}
+{"ts":"2026-07-08T19:05:00.685Z","event":"tool.list_files.ok","type":"jwt","flow":"chatgpt","email":"lucaskerim@gmail.com","subpath":"","recursive":true,"count":78}
+{"ts":"2026-07-08T19:05:07.429Z","event":"auth.jwt.ok","rid":"1368972e36d8","method":"POST","path":"/","ip":"::1","auth":"jwt","flow":"chatgpt","email":"lucaskerim@gmail.com"}
+{"ts":"2026-07-08T19:05:07.434Z","event":"mcp.request.start","rid":"1368972e36d8","method":"POST","path":"/mcp","ip":"::1","auth":"jwt","flow":"chatgpt","email":"lucaskerim@gmail.com","rpcMethod":"tools/call","rpcId":0,"tool":"read_file"}
+{"ts":"2026-07-08T19:05:07.438Z","event":"tool.read_file.start","type":"jwt","flow":"chatgpt","email":"lucaskerim@gmail.com","filepath":"_system/Startup/01_COURT_SYSTEM_STARTUP.md"}
+{"ts":"2026-07-08T19:05:07.441Z","event":"tool.read_file.ok","type":"jwt","flow":"chatgpt","email":"lucaskerim@gmail.com","filepath":"_system/Startup/01_COURT_SYSTEM_STARTUP.md","chars":5276}
+{"ts":"2026-07-08T19:05:07.442Z","event":"http.request","rid":"1368972e36d8","method":"POST","path":"/mcp","ip":"::1","auth":"jwt","flow":"chatgpt","email":"lucaskerim@gmail.com","status":200,"ms":14}
+{"ts":"2026-07-08T19:05:23.123Z","event":"http.request","rid":"d664e57ea88a","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:05:53.117Z","event":"http.request","rid":"7028a1cf454f","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:06:03.261Z","event":"http.request","rid":"180e8ebfbd2d","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:06:05.089Z","event":"http.request","rid":"104f3b330c3c","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:06:05.103Z","event":"auth.api_key.ok","rid":"f3a5665de6fb","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:06:05.104Z","event":"api.files.ok","rid":"f3a5665de6fb","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"","count":8}
+{"ts":"2026-07-08T19:06:05.104Z","event":"http.request","rid":"f3a5665de6fb","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":1}
+{"ts":"2026-07-08T19:06:08.658Z","event":"auth.api_key.ok","rid":"03069fc07dc7","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:06:08.824Z","event":"api.files.ok","rid":"03069fc07dc7","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"🗑 Trash","count":1}
+{"ts":"2026-07-08T19:06:08.882Z","event":"http.request","rid":"03069fc07dc7","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":224}
+{"ts":"2026-07-08T19:06:11.455Z","event":"http.request","rid":"50b3f36c2773","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:06:11.911Z","event":"auth.api_key.ok","rid":"1f2942249e0b","method":"GET","path":"/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:06:11.912Z","event":"api.oauth_state.ok","rid":"1f2942249e0b","method":"GET","path":"/api/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:06:11.913Z","event":"http.request","rid":"1f2942249e0b","method":"GET","path":"/api/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:06:13.432Z","event":"auth.api_key.ok","rid":"608f56e0bc55","method":"POST","path":"/trash/empty","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:06:13.434Z","event":"file.change.empty_trash","rid":"608f56e0bc55","method":"POST","path":"/api/trash/empty","ip":"::1","auth":"api_key","flow":"webpanel","source":"rest_api","deletedCount":1}
+{"ts":"2026-07-08T19:06:13.435Z","event":"http.request","rid":"608f56e0bc55","method":"POST","path":"/api/trash/empty","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":3}
+{"ts":"2026-07-08T19:06:13.437Z","event":"auth.api_key.ok","rid":"237f74443b9f","method":"GET","path":"/trash/config","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:06:13.438Z","event":"http.request","rid":"237f74443b9f","method":"GET","path":"/api/trash/config","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":1}
+{"ts":"2026-07-08T19:06:13.738Z","event":"auth.api_key.ok","rid":"97bbeb181558","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:06:13.739Z","event":"api.files.ok","rid":"97bbeb181558","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"🗑 Trash","count":0}
+{"ts":"2026-07-08T19:06:13.740Z","event":"http.request","rid":"97bbeb181558","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:06:23.121Z","event":"http.request","rid":"5e7e8b8a3896","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:06:35.563Z","event":"http.request","rid":"dfa10a75bad2","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:06:51.975Z","event":"oauth.state.loaded","clients":5,"refreshTokens":4}
+{"ts":"2026-07-08T19:06:53.124Z","event":"http.request","rid":"c522bf493641","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:06:55.951Z","event":"http.request","rid":"34392ee65a47","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:06:56.221Z","event":"auth.api_key.ok","rid":"fe116f437925","method":"GET","path":"/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:06:56.221Z","event":"api.oauth_state.ok","rid":"fe116f437925","method":"GET","path":"/api/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:06:56.222Z","event":"http.request","rid":"fe116f437925","method":"GET","path":"/api/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":1}
+{"ts":"2026-07-08T19:06:56.884Z","event":"auth.api_key.ok","rid":"751e3f7e03c7","method":"GET","path":"/trash/config","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:06:56.885Z","event":"http.request","rid":"751e3f7e03c7","method":"GET","path":"/api/trash/config","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":1}
+{"ts":"2026-07-08T19:06:58.580Z","event":"auth.api_key.ok","rid":"2fccff8184e9","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:06:58.581Z","event":"api.files.ok","rid":"2fccff8184e9","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"","count":8}
+{"ts":"2026-07-08T19:06:58.582Z","event":"http.request","rid":"2fccff8184e9","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:07:00.399Z","event":"auth.api_key.ok","rid":"b178feb1950d","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:00.400Z","event":"api.files.ok","rid":"b178feb1950d","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system","count":7}
+{"ts":"2026-07-08T19:07:00.401Z","event":"http.request","rid":"b178feb1950d","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:07:05.133Z","event":"http.request","rid":"824a815e0040","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:07:05.222Z","event":"auth.api_key.ok","rid":"3727b6065f28","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:05.224Z","event":"api.files.ok","rid":"3727b6065f28","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system/Old System files ","count":2}
+{"ts":"2026-07-08T19:07:05.225Z","event":"http.request","rid":"3727b6065f28","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":3}
+{"ts":"2026-07-08T19:07:06.662Z","event":"auth.api_key.ok","rid":"9ecd3722df22","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:06.664Z","event":"api.files.ok","rid":"9ecd3722df22","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system","count":7}
+{"ts":"2026-07-08T19:07:06.666Z","event":"http.request","rid":"9ecd3722df22","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":4}
+{"ts":"2026-07-08T19:07:12.076Z","event":"auth.api_key.ok","rid":"2046203cd402","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:12.077Z","event":"api.files.ok","rid":"2046203cd402","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"","count":8}
+{"ts":"2026-07-08T19:07:12.078Z","event":"http.request","rid":"2046203cd402","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:07:13.430Z","event":"auth.api_key.ok","rid":"689826b517ad","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:13.431Z","event":"api.files.ok","rid":"689826b517ad","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"0. Core Folder","count":3}
+{"ts":"2026-07-08T19:07:13.432Z","event":"http.request","rid":"689826b517ad","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:07:14.746Z","event":"auth.api_key.ok","rid":"862de96ffaab","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:14.748Z","event":"api.files.ok","rid":"862de96ffaab","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"0. Core Folder/Master Logs","count":4}
+{"ts":"2026-07-08T19:07:14.749Z","event":"http.request","rid":"862de96ffaab","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":3}
+{"ts":"2026-07-08T19:07:15.958Z","event":"auth.api_key.ok","rid":"9a7364223cc4","method":"GET","path":"/file","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:15.971Z","event":"api.file.read.ok","rid":"9a7364223cc4","method":"GET","path":"0. Core Folder/Master Logs/Master_Incident_Log_v1.md","ip":"::1","auth":"api_key","flow":"webpanel","chars":28}
+{"ts":"2026-07-08T19:07:15.972Z","event":"http.request","rid":"9a7364223cc4","method":"GET","path":"/api/file","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":14}
+{"ts":"2026-07-08T19:07:17.016Z","event":"auth.api_key.ok","rid":"815febae86a6","method":"GET","path":"/file","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:17.019Z","event":"api.file.read.ok","rid":"815febae86a6","method":"GET","path":"0. Core Folder/Master Logs/Master_Incident_Log_v1.md","ip":"::1","auth":"api_key","flow":"webpanel","chars":28}
+{"ts":"2026-07-08T19:07:17.026Z","event":"http.request","rid":"815febae86a6","method":"GET","path":"/api/file","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":10}
+{"ts":"2026-07-08T19:07:20.917Z","event":"auth.api_key.ok","rid":"b29c04a068b8","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:20.918Z","event":"api.files.ok","rid":"b29c04a068b8","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"0. Core Folder","count":3}
+{"ts":"2026-07-08T19:07:20.920Z","event":"http.request","rid":"b29c04a068b8","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":3}
+{"ts":"2026-07-08T19:07:21.946Z","event":"auth.api_key.ok","rid":"5d1d46965c47","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:21.947Z","event":"api.files.ok","rid":"5d1d46965c47","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"","count":8}
+{"ts":"2026-07-08T19:07:21.948Z","event":"http.request","rid":"5d1d46965c47","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:07:23.125Z","event":"http.request","rid":"74ab4d8d87ea","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:07:23.433Z","event":"auth.api_key.ok","rid":"9f02464c4104","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:23.434Z","event":"api.files.ok","rid":"9f02464c4104","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system","count":7}
+{"ts":"2026-07-08T19:07:23.435Z","event":"http.request","rid":"9f02464c4104","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:07:25.404Z","event":"auth.api_key.ok","rid":"54e436bcbb18","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:25.405Z","event":"api.files.ok","rid":"54e436bcbb18","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system/Startup","count":4}
+{"ts":"2026-07-08T19:07:25.406Z","event":"http.request","rid":"54e436bcbb18","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:07:29.050Z","event":"auth.api_key.ok","rid":"cf176f96d655","method":"GET","path":"/file","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:29.051Z","event":"api.file.read.ok","rid":"cf176f96d655","method":"GET","path":"_system/Startup/01_COURT_SYSTEM_STARTUP.md","ip":"::1","auth":"api_key","flow":"webpanel","chars":5276}
+{"ts":"2026-07-08T19:07:29.052Z","event":"http.request","rid":"cf176f96d655","method":"GET","path":"/api/file","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:07:35.101Z","event":"http.request","rid":"aa54ac049ead","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:07:41.467Z","event":"auth.api_key.ok","rid":"5c7c82fb4189","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:41.474Z","event":"api.files.ok","rid":"5c7c82fb4189","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system","count":7}
+{"ts":"2026-07-08T19:07:41.474Z","event":"http.request","rid":"5c7c82fb4189","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":7}
+{"ts":"2026-07-08T19:07:43.886Z","event":"auth.api_key.ok","rid":"bd45c35f4c31","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:43.887Z","event":"api.files.ok","rid":"bd45c35f4c31","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system/Rules","count":11}
+{"ts":"2026-07-08T19:07:43.888Z","event":"http.request","rid":"bd45c35f4c31","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:07:49.570Z","event":"auth.api_key.ok","rid":"be755e3ee134","method":"GET","path":"/file","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:49.572Z","event":"api.file.read.ok","rid":"be755e3ee134","method":"GET","path":"_system/Rules/commands.md","ip":"::1","auth":"api_key","flow":"webpanel","chars":5391}
+{"ts":"2026-07-08T19:07:49.574Z","event":"http.request","rid":"be755e3ee134","method":"GET","path":"/api/file","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":4}
+{"ts":"2026-07-08T19:07:53.125Z","event":"http.request","rid":"0dab351e5293","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:07:57.694Z","event":"auth.api_key.ok","rid":"638f663b57ed","method":"GET","path":"/file","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:07:57.695Z","event":"api.file.read.ok","rid":"638f663b57ed","method":"GET","path":"_system/Rules/load_order.md","ip":"::1","auth":"api_key","flow":"webpanel","chars":1068}
+{"ts":"2026-07-08T19:07:57.696Z","event":"http.request","rid":"638f663b57ed","method":"GET","path":"/api/file","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:08:02.872Z","event":"auth.api_key.ok","rid":"fbb8dc0067ad","method":"POST","path":"/trash","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:02.875Z","event":"file.change.trash","rid":"fbb8dc0067ad","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","source":"rest_api","from":"_system/Rules/commands.md.bak-20260708-185845","to":"🗑 Trash/2026-07-08T19-08-02-873Z-132866/_system/Rules/commands.md.bak-20260708-185845"}
+{"ts":"2026-07-08T19:08:02.876Z","event":"http.request","rid":"fbb8dc0067ad","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":4}
+{"ts":"2026-07-08T19:08:03.205Z","event":"auth.api_key.ok","rid":"757d7e2e2e1f","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:03.206Z","event":"api.files.ok","rid":"757d7e2e2e1f","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system/Rules","count":10}
+{"ts":"2026-07-08T19:08:03.207Z","event":"http.request","rid":"757d7e2e2e1f","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:08:05.104Z","event":"http.request","rid":"a08a7ef37cb5","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:08:06.357Z","event":"auth.api_key.ok","rid":"2da196341d03","method":"POST","path":"/trash","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:06.384Z","event":"file.change.trash","rid":"2da196341d03","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","source":"rest_api","from":"_system/Rules/commands.md.bak-20260708-183731","to":"🗑 Trash/2026-07-08T19-08-06-382Z-0121cf/_system/Rules/commands.md.bak-20260708-183731"}
+{"ts":"2026-07-08T19:08:06.471Z","event":"http.request","rid":"2da196341d03","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":115}
+{"ts":"2026-07-08T19:08:06.774Z","event":"auth.api_key.ok","rid":"496528b0347e","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:06.877Z","event":"api.files.ok","rid":"496528b0347e","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system/Rules","count":9}
+{"ts":"2026-07-08T19:08:06.971Z","event":"http.request","rid":"496528b0347e","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":197}
+{"ts":"2026-07-08T19:08:08.992Z","event":"auth.api_key.ok","rid":"4ef334707afd","method":"POST","path":"/trash","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:08.996Z","event":"file.change.trash","rid":"4ef334707afd","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","source":"rest_api","from":"_system/Rules/commands.md.bak-20260708-1755","to":"🗑 Trash/2026-07-08T19-08-08-994Z-ad66d9/_system/Rules/commands.md.bak-20260708-1755"}
+{"ts":"2026-07-08T19:08:08.996Z","event":"http.request","rid":"4ef334707afd","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":4}
+{"ts":"2026-07-08T19:08:09.450Z","event":"auth.api_key.ok","rid":"1c5349130090","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:09.452Z","event":"api.files.ok","rid":"1c5349130090","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system/Rules","count":8}
+{"ts":"2026-07-08T19:08:09.452Z","event":"http.request","rid":"1c5349130090","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:08:11.985Z","event":"auth.api_key.ok","rid":"4bb28ab6f1ed","method":"POST","path":"/trash","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:11.987Z","event":"file.change.trash","rid":"4bb28ab6f1ed","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","source":"rest_api","from":"_system/Rules/project_rules.md.bak-20260708-185845","to":"🗑 Trash/2026-07-08T19-08-11-986Z-175621/_system/Rules/project_rules.md.bak-20260708-185845"}
+{"ts":"2026-07-08T19:08:11.988Z","event":"http.request","rid":"4bb28ab6f1ed","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":4}
+{"ts":"2026-07-08T19:08:12.416Z","event":"auth.api_key.ok","rid":"5e1c1fe30d7f","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:12.418Z","event":"api.files.ok","rid":"5e1c1fe30d7f","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system/Rules","count":7}
+{"ts":"2026-07-08T19:08:12.419Z","event":"http.request","rid":"5e1c1fe30d7f","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":3}
+{"ts":"2026-07-08T19:08:14.416Z","event":"auth.api_key.ok","rid":"9709e416ac44","method":"POST","path":"/trash","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:14.428Z","event":"file.change.trash","rid":"9709e416ac44","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","source":"rest_api","from":"_system/Rules/project_rules.md.bak-20260708-183731","to":"🗑 Trash/2026-07-08T19-08-14-426Z-655425/_system/Rules/project_rules.md.bak-20260708-183731"}
+{"ts":"2026-07-08T19:08:14.429Z","event":"http.request","rid":"9709e416ac44","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":13}
+{"ts":"2026-07-08T19:08:14.765Z","event":"auth.api_key.ok","rid":"499f9b286470","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:14.823Z","event":"api.files.ok","rid":"499f9b286470","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system/Rules","count":6}
+{"ts":"2026-07-08T19:08:14.824Z","event":"http.request","rid":"499f9b286470","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":59}
+{"ts":"2026-07-08T19:08:17.772Z","event":"auth.api_key.ok","rid":"be8f4ddf2f47","method":"POST","path":"/trash","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:17.774Z","event":"file.change.trash","rid":"be8f4ddf2f47","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","source":"rest_api","from":"_system/Rules/saving_rules.md.bak-20260708-183731","to":"🗑 Trash/2026-07-08T19-08-17-773Z-6ea014/_system/Rules/saving_rules.md.bak-20260708-183731"}
+{"ts":"2026-07-08T19:08:17.775Z","event":"http.request","rid":"be8f4ddf2f47","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":4}
+{"ts":"2026-07-08T19:08:18.203Z","event":"auth.api_key.ok","rid":"e1742cc5fcb7","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:18.204Z","event":"api.files.ok","rid":"e1742cc5fcb7","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system/Rules","count":5}
+{"ts":"2026-07-08T19:08:18.205Z","event":"http.request","rid":"e1742cc5fcb7","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:08:21.117Z","event":"auth.api_key.ok","rid":"8c2a7b61afe9","method":"POST","path":"/trash","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:21.122Z","event":"file.change.trash","rid":"8c2a7b61afe9","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","source":"rest_api","from":"_system/Rules/saving_rules.md.bak-20260708-185845","to":"🗑 Trash/2026-07-08T19-08-21-119Z-b0fb63/_system/Rules/saving_rules.md.bak-20260708-185845"}
+{"ts":"2026-07-08T19:08:21.126Z","event":"http.request","rid":"8c2a7b61afe9","method":"POST","path":"/api/trash","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":9}
+{"ts":"2026-07-08T19:08:21.370Z","event":"auth.api_key.ok","rid":"3001a72e4377","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:21.377Z","event":"api.files.ok","rid":"3001a72e4377","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system/Rules","count":4}
+{"ts":"2026-07-08T19:08:21.378Z","event":"http.request","rid":"3001a72e4377","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":8}
+{"ts":"2026-07-08T19:08:22.807Z","event":"auth.api_key.ok","rid":"8badfa3c2f79","method":"GET","path":"/file","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:22.809Z","event":"api.file.read.ok","rid":"8badfa3c2f79","method":"GET","path":"_system/Rules/commands.md","ip":"::1","auth":"api_key","flow":"webpanel","chars":5391}
+{"ts":"2026-07-08T19:08:22.809Z","event":"http.request","rid":"8badfa3c2f79","method":"GET","path":"/api/file","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:08:23.137Z","event":"http.request","rid":"76928a77d0b6","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:08:23.838Z","event":"auth.api_key.ok","rid":"661ed5bf80d8","method":"GET","path":"/file","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:08:23.840Z","event":"api.file.read.ok","rid":"661ed5bf80d8","method":"GET","path":"_system/Rules/load_order.md","ip":"::1","auth":"api_key","flow":"webpanel","chars":1068}
+{"ts":"2026-07-08T19:08:23.840Z","event":"http.request","rid":"661ed5bf80d8","method":"GET","path":"/api/file","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:08:35.129Z","event":"http.request","rid":"3244edaf4922","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:08:53.120Z","event":"http.request","rid":"d192fb5a27e5","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:09:04.619Z","event":"auth.api_key.ok","rid":"92b5e289bf17","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:04.620Z","event":"api.files.ok","rid":"92b5e289bf17","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system","count":7}
+{"ts":"2026-07-08T19:09:04.621Z","event":"http.request","rid":"92b5e289bf17","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:09:05.178Z","event":"http.request","rid":"118e05e61b77","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:09:07.388Z","event":"auth.api_key.ok","rid":"4086b353d3ac","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:07.389Z","event":"api.files.ok","rid":"4086b353d3ac","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"","count":8}
+{"ts":"2026-07-08T19:09:07.389Z","event":"http.request","rid":"4086b353d3ac","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":1}
+{"ts":"2026-07-08T19:09:11.450Z","event":"auth.api_key.ok","rid":"48199d229015","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:11.451Z","event":"api.files.ok","rid":"48199d229015","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"1. Master Court System","count":8}
+{"ts":"2026-07-08T19:09:11.452Z","event":"http.request","rid":"48199d229015","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:09:14.191Z","event":"auth.api_key.ok","rid":"6fcc14512d16","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:14.191Z","event":"api.files.ok","rid":"6fcc14512d16","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"1. Master Court System/0. Waiting To Be Sorted - Approval Required","count":0}
+{"ts":"2026-07-08T19:09:14.192Z","event":"http.request","rid":"6fcc14512d16","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":1}
+{"ts":"2026-07-08T19:09:15.610Z","event":"auth.api_key.ok","rid":"4c60e5215382","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:15.628Z","event":"api.files.ok","rid":"4c60e5215382","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"1. Master Court System","count":8}
+{"ts":"2026-07-08T19:09:15.628Z","event":"http.request","rid":"4c60e5215382","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":18}
+{"ts":"2026-07-08T19:09:18.696Z","event":"auth.api_key.ok","rid":"6cc9318ada43","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:18.697Z","event":"api.files.ok","rid":"6cc9318ada43","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"","count":8}
+{"ts":"2026-07-08T19:09:18.698Z","event":"http.request","rid":"6cc9318ada43","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:09:20.438Z","event":"auth.api_key.ok","rid":"b472722941d4","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:20.439Z","event":"api.files.ok","rid":"b472722941d4","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system","count":7}
+{"ts":"2026-07-08T19:09:20.440Z","event":"http.request","rid":"b472722941d4","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:09:22.492Z","event":"auth.api_key.ok","rid":"bcf8ed22f143","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:22.493Z","event":"api.files.ok","rid":"bcf8ed22f143","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system/Index","count":1}
+{"ts":"2026-07-08T19:09:22.493Z","event":"http.request","rid":"bcf8ed22f143","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:09:23.137Z","event":"http.request","rid":"099d17e8afce","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:09:24.039Z","event":"auth.api_key.ok","rid":"5acb76efcbfd","method":"GET","path":"/file","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:24.041Z","event":"api.file.read.ok","rid":"5acb76efcbfd","method":"GET","path":"_system/Index/file_index.json","ip":"::1","auth":"api_key","flow":"webpanel","chars":6128}
+{"ts":"2026-07-08T19:09:24.043Z","event":"http.request","rid":"5acb76efcbfd","method":"GET","path":"/api/file","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":4}
+{"ts":"2026-07-08T19:09:33.273Z","event":"auth.api_key.ok","rid":"e3e69683fc5a","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:33.275Z","event":"api.files.ok","rid":"e3e69683fc5a","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"_system","count":7}
+{"ts":"2026-07-08T19:09:33.275Z","event":"http.request","rid":"e3e69683fc5a","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:09:35.157Z","event":"http.request","rid":"a8b531888795","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:09:40.735Z","event":"auth.api_key.ok","rid":"7751d7e53176","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:40.736Z","event":"api.files.ok","rid":"7751d7e53176","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"","count":8}
+{"ts":"2026-07-08T19:09:40.736Z","event":"http.request","rid":"7751d7e53176","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":1}
+{"ts":"2026-07-08T19:09:42.263Z","event":"auth.api_key.ok","rid":"55f7d42d3cab","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:42.275Z","event":"http.request","rid":"55f7d42d3cab","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":12}
+{"ts":"2026-07-08T19:09:42.274Z","event":"api.files.ok","rid":"55f7d42d3cab","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"0. Core Folder","count":3}
+{"ts":"2026-07-08T19:09:44.008Z","event":"auth.api_key.ok","rid":"10284fcb272e","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:44.009Z","event":"api.files.ok","rid":"10284fcb272e","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"0. Core Folder/Profiles","count":4}
+{"ts":"2026-07-08T19:09:44.010Z","event":"http.request","rid":"10284fcb272e","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:09:46.079Z","event":"auth.api_key.ok","rid":"cd1029f0b16d","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:46.080Z","event":"api.files.ok","rid":"cd1029f0b16d","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"0. Core Folder/Profiles/Master Profiles","count":0}
+{"ts":"2026-07-08T19:09:46.081Z","event":"http.request","rid":"cd1029f0b16d","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:09:47.327Z","event":"auth.api_key.ok","rid":"df9c4a16d755","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:09:47.329Z","event":"api.files.ok","rid":"df9c4a16d755","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"0. Core Folder/Profiles","count":4}
+{"ts":"2026-07-08T19:09:47.330Z","event":"http.request","rid":"df9c4a16d755","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":3}
+{"ts":"2026-07-08T19:09:53.128Z","event":"http.request","rid":"586d336dd0bf","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:10:21.618Z","event":"http.request","rid":"f50318c8958e","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:10:23.142Z","event":"http.request","rid":"c502f4e7bb61","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:10:53.125Z","event":"http.request","rid":"7e5186b20381","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:11:11.938Z","event":"auth.api_key.ok","rid":"09bc3b517dd1","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:11:11.940Z","event":"api.files.ok","rid":"09bc3b517dd1","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"","count":8}
+{"ts":"2026-07-08T19:11:11.941Z","event":"http.request","rid":"09bc3b517dd1","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":3}
+{"ts":"2026-07-08T19:11:14.114Z","event":"auth.api_key.ok","rid":"987bd16eac15","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:11:14.117Z","event":"api.files.ok","rid":"987bd16eac15","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"🗑 Trash","count":7}
+{"ts":"2026-07-08T19:11:14.117Z","event":"http.request","rid":"987bd16eac15","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":3}
+{"ts":"2026-07-08T19:11:17.402Z","event":"auth.api_key.ok","rid":"30d2b6708f4e","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:11:17.404Z","event":"api.files.ok","rid":"30d2b6708f4e","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"🗑 Trash/2026-07-08T19-08-02-873Z-132866","count":1}
+{"ts":"2026-07-08T19:11:17.405Z","event":"http.request","rid":"30d2b6708f4e","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":3}
+{"ts":"2026-07-08T19:11:19.539Z","event":"auth.api_key.ok","rid":"6316ac2f4e8e","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:11:19.540Z","event":"api.files.ok","rid":"6316ac2f4e8e","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"🗑 Trash","count":7}
+{"ts":"2026-07-08T19:11:19.541Z","event":"http.request","rid":"6316ac2f4e8e","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:11:23.124Z","event":"http.request","rid":"938f8db5c3f3","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:11:23.419Z","event":"http.request","rid":"bef1bf79b302","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:11:23.428Z","event":"auth.api_key.ok","rid":"759746c52345","method":"GET","path":"/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:11:23.470Z","event":"api.oauth_state.ok","rid":"759746c52345","method":"GET","path":"/api/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:11:23.471Z","event":"http.request","rid":"759746c52345","method":"GET","path":"/api/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":43}
+{"ts":"2026-07-08T19:11:34.471Z","event":"http.request","rid":"1867cc0a20ac","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:11:34.474Z","event":"auth.api_key.ok","rid":"55490eb6c4ce","method":"GET","path":"/files","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:11:34.474Z","event":"api.files.ok","rid":"55490eb6c4ce","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","subpath":"","count":8}
+{"ts":"2026-07-08T19:11:34.475Z","event":"http.request","rid":"55490eb6c4ce","method":"GET","path":"/api/files","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":1}
+{"ts":"2026-07-08T19:11:38.257Z","event":"http.request","rid":"a3d8c7056c27","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:11:38.264Z","event":"auth.api_key.ok","rid":"2299c6adccd4","method":"GET","path":"/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:11:38.265Z","event":"api.oauth_state.ok","rid":"2299c6adccd4","method":"GET","path":"/api/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:11:38.265Z","event":"http.request","rid":"2299c6adccd4","method":"GET","path":"/api/oauth-state","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":1}
+{"ts":"2026-07-08T19:11:38.278Z","event":"auth.api_key.ok","rid":"b89d54313527","method":"GET","path":"/trash/config","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:11:38.280Z","event":"http.request","rid":"b89d54313527","method":"GET","path":"/api/trash/config","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":2}
+{"ts":"2026-07-08T19:11:43.999Z","event":"auth.api_key.ok","rid":"24799b250b9a","method":"POST","path":"/trash/empty","ip":"::1","auth":"api_key","flow":"webpanel"}
+{"ts":"2026-07-08T19:11:44.015Z","event":"file.change.empty_trash","rid":"24799b250b9a","method":"POST","path":"/api/trash/empty","ip":"::1","auth":"api_key","flow":"webpanel","source":"rest_api","deletedCount":7}
+{"ts":"2026-07-08T19:11:44.016Z","event":"http.request","rid":"24799b250b9a","method":"POST","path":"/api/trash/empty","ip":"::1","auth":"api_key","flow":"webpanel","status":200,"ms":17}
+{"ts":"2026-07-08T19:12:04.590Z","event":"http.request","rid":"1617a0539814","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:12:34.575Z","event":"http.request","rid":"8c34d44605bc","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:13:04.575Z","event":"http.request","rid":"195fa47dab86","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:13:34.579Z","event":"http.request","rid":"ec9b341b6f8a","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:14:04.591Z","event":"http.request","rid":"8a973552fb0b","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:14:34.582Z","event":"http.request","rid":"bdb9c84b113d","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:15:04.591Z","event":"http.request","rid":"00a65e4d6aa4","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:15:38.579Z","event":"http.request","rid":"defefe6911de","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:16:38.592Z","event":"http.request","rid":"342a8832573e","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}
+{"ts":"2026-07-08T19:17:38.578Z","event":"http.request","rid":"bf75868869a9","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:18:38.577Z","event":"http.request","rid":"02bf5a224640","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:19:38.583Z","event":"http.request","rid":"43b25b3d5219","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":0}
+{"ts":"2026-07-08T19:20:38.591Z","event":"http.request","rid":"5279aa18f4fd","method":"GET","path":"/api/ping","ip":"::1","status":200,"ms":1}

@@ -1,52 +1,74 @@
-# mcp-hive-server
+﻿# mcp-hive-server
 
-MCP server exposing a folder (`HIVE_ROOT`) as a tool-accessible file store,
-authenticated via a static API key or Cloudflare Access OAuth.
+MCP and REST server for the Master Hive file store.
 
-## MCP tools
+It exposes the FireStorm root at `HIVE_ROOT` over:
 
-- `list_files`, `read_file`, `write_file`, `delete_file` — basic file CRUD (`delete_file` removes folders recursively too).
-- `move_file` — move/rename a file or folder.
-- `mkdir` — create a folder.
-- `stat_file` — size, modified time, and sha256 of a file.
-- `search_files` — substring search across file contents.
-- `fetch_url_to_file` — download a URL's content into the store (capped at 10MB).
-- `preview_sort_inbox` / `apply_sort_inbox` — drop files/folders into a `_sorter`
-  staging folder, `preview_sort_inbox` asks Claude (`ANTHROPIC_API_KEY`) where
-  each item should go without moving anything, `apply_sort_inbox` moves only
-  the item/destination pairs explicitly confirmed by the caller.
+- `POST /mcp` for Claude and ChatGPT MCP clients
+- `GET /api/*` and `POST /api/*` for the Master Brain web panel
 
-## REST API (`/api/*`)
+## What it serves
 
-Same auth as `/mcp` (`Authorization: Bearer <HIVE_API_KEY>` or a valid OAuth
-JWT). Used by [the-master-brain](https://github.com/lucaskerim123/the-master-brain)
-panel/sync engine, but usable from anything else too:
+- Shared FireStorm content at `C:\Project FireStorm\The Master Hive`
+- Protected system roots like `_system`, `0. Core Folder`, `Media`, and the other project roots
+- `🗑 Trash` as the soft-delete bin
+- `/emptybin`-style permanent deletion for trash contents
+- `preview_sort_inbox` / `apply_sort_inbox` for `_sorter`
 
-- `GET /api/ping` — unauthenticated liveness check.
-- `GET /api/manifest` — `{ path, size, mtime, sha256 }` for every file, for sync diffing.
-- `GET /api/files?subpath=` — list a folder (with per-file size/mtime).
-- `GET /api/file?path=` — read a file.
-- `PUT /api/file` — `{ path, content }`, create/overwrite a file.
-- `DELETE /api/file?path=` — delete a file or folder.
-- `POST /api/move` — `{ from, to }`, move/rename a file or folder.
-- `POST /api/mkdir` — `{ path }`, create a folder.
-- `GET /api/download?path=` — download a file's raw bytes.
-- `POST /api/upload?path=` — raw body upload, any content-type.
-- `GET /api/oauth-state` — connected MCP clients (Claude/ChatGPT) and accounts with a refresh token, no secrets.
-- `POST /api/sort/preview` / `POST /api/sort/apply` — same two-step sort as the MCP tools above, for the web panel's Sort button.
+## Main files
 
-## Logging
+- `server.js` - HTTP server, MCP tools, REST routes, trash workflow
+- `hive-ops.js` - filesystem helpers and path safety
+- `oauth.js` - OAuth registration and state tracking
+- `Codex/` - ChatGPT Actions schemas and startup command docs
+- `claude/` - Claude lane notes
 
-Every MCP tool call, REST request, and file change is written as structured
-JSON to `logs/master-hive-events.jsonl` (and `-errors.jsonl` on failure),
-tagged with which flow it came from (`claude`, `chatgpt`, or `webpanel` via
-the `X-Hive-Flow` header, or a raw API key call). The web panel's System tab
-reads these for the connection monitor and activity log.
+## Environment
 
-## Running a second instance (e.g. on a VPS)
+Required:
 
-This same server can run anywhere — point `HIVE_ROOT` at a different folder
-and give it its own `PORT` / `HIVE_API_KEY`. That's how
-`the-master-brain` treats "PC node" and "VPS node" as two independent
-instances of this same codebase, kept in sync by its own sync engine rather
-than by anything in this repo.
+- `HIVE_ROOT`
+- `HIVE_API_KEY`
+- `PUBLIC_BASE_URL`
+- `SESSION_SECRET`
+
+Common optional values:
+
+- `PORT`
+- `ANTHROPIC_API_KEY`
+- `SORT_MODEL`
+- `TRASH_RETENTION_DAYS`
+
+## Run
+
+```powershell
+npm install
+npm start
+```
+
+For local dev, `node server.js` also works.
+
+## API summary
+
+- `GET /api/ping` - liveness
+- `GET /api/manifest` - file manifest for sync and audit
+- `GET /api/files?subpath=` - list a folder
+- `GET /api/file?path=` - read a file
+- `PUT /api/file` - write a file
+- `DELETE /api/file?path=` - delete a file or folder, except protected roots
+- `POST /api/trash` - move a file or folder into `🗑 Trash`
+- `POST /api/trash/empty` - permanently empty `🗑 Trash`
+- `GET /api/trash/config` / `POST /api/trash/config` - admin trash retention
+- `POST /api/move` - move/rename
+- `POST /api/mkdir` - create a folder
+- `GET /api/download?path=` - download raw bytes
+- `POST /api/upload?path=` - upload raw bytes
+- `GET /api/oauth-state` - connected MCP clients and refresh-token accounts
+- `POST /api/sort/preview` / `POST /api/sort/apply` - two-step sort workflow
+
+## Notes
+
+- Deleting from the panel now moves items to `🗑 Trash` instead of hard deleting them.
+- Protected root folders are intentionally non-deletable and non-trashable.
+- Trash is auto-purged after the configured retention window, default `4` days.
+- All tool calls, REST requests, and file changes are logged in `logs/`.

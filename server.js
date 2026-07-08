@@ -666,7 +666,7 @@ function buildServer(authContext = {}) {
   server.tool(
     "move_to_trash",
     `Move a file or folder into "${TRASH_FOLDER}" instead of permanently deleting it. The original relative path is preserved under a timestamped trash entry.`,
-    { filepath: z.string().describe("Relative path to move into _trash") },
+    { filepath: z.string().describe(`Relative path to move into ${TRASH_FOLDER}`) },
     async ({ filepath }) => {
       logEvent("tool.move_to_trash.start", { ...authContext, filepath });
       const result = await movePathToTrash(filepath, { ...authContext, source: "mcp_tool" });
