@@ -11,6 +11,7 @@ import { z } from "zod";
 import { jwtVerify } from "jose";
 import Anthropic from "@anthropic-ai/sdk";
 import { mountOAuth, getOAuthState } from "./oauth.js";
+import { makeOps } from "./hive-ops.js";
 
 const ROOT = process.env.HIVE_ROOT;
 const API_KEY = process.env.HIVE_API_KEY;
@@ -19,11 +20,14 @@ const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
 const SORT_FOLDER = "_sorter";
 const SORT_MODEL = process.env.SORT_MODEL || "claude-haiku-4-5-20251001";
+const FETCH_MAX_BYTES = 10 * 1024 * 1024;
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = path.join(SERVER_DIR, "logs");
 const EVENT_LOG_FILE = path.join(LOG_DIR, "master-hive-events.jsonl");
 const ERROR_LOG_FILE = path.join(LOG_DIR, "master-hive-errors.jsonl");
+
+const ops = makeOps(ROOT);
 
 function logEvent(event, fields = {}) {
   const line = JSON.stringify({ ts: new Date().toISOString(), event, ...fields });
@@ -63,78 +67,18 @@ function summarizeMcpBody(body) {
   };
 }
 
-function safeResolve(rel) {
-  const full = path.resolve(ROOT, rel || ".");
-  if (!full.startsWith(path.resolve(ROOT))) {
-    throw new Error("Path escapes the Master Hive root");
-  }
-  return full;
-}
-
-function decodeText(buf) {
-  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
-    return buf.slice(2).toString("utf16le");
-  }
-  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
-    return buf.slice(2).swap16().toString("utf16le");
-  }
-  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
-    return buf.slice(3).toString("utf-8");
-  }
-  return buf.toString("utf-8");
-}
-
-async function listRecursive(dir, base) {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  let lines = [];
-  for (const e of entries) {
-    const rel = path.join(base, e.name);
-    if (e.isDirectory()) {
-      lines.push(`[DIR] ${rel}`);
-      lines = lines.concat(await listRecursive(path.join(dir, e.name), rel));
-    } else {
-      lines.push(`[FILE] ${rel}`);
-    }
-  }
-  return lines;
-}
-
-// Recursive listing with size/mtime/sha256 per file, used by the web panel's
-// PC<->VPS sync (and generally as a "what's actually in here" manifest).
-async function listManifest(dir, base) {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  let out = [];
-  for (const e of entries) {
-    const rel = path.join(base, e.name).split(path.sep).join("/");
-    const full = path.join(dir, e.name);
-    if (e.isDirectory()) {
-      out = out.concat(await listManifest(full, rel));
-    } else {
-      const buf = await fs.readFile(full);
-      const stat = await fs.stat(full);
-      out.push({
-        path: rel,
-        size: stat.size,
-        mtime: stat.mtime.toISOString(),
-        sha256: crypto.createHash("sha256").update(buf).digest("hex"),
-      });
-    }
-  }
-  return out;
-}
-
 // Directory-only listing used to give the sorter model a map of where things
 // could go. Capped in depth and count so the prompt stays small.
-async function listFolderTree(dir, base, depth, out) {
+async function listFolderTree(base, depth, out) {
   if (depth <= 0) return out;
-  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const entries = await ops.listFiles(base);
   for (const e of entries) {
-    if (!e.isDirectory()) continue;
+    if (e.type !== "dir") continue;
     if (base === "" && e.name === SORT_FOLDER) continue;
     const rel = base ? `${base}/${e.name}` : e.name;
     out.push(rel);
     if (out.length >= 400) return out;
-    await listFolderTree(path.join(dir, e.name), rel, depth - 1, out);
+    await listFolderTree(rel, depth - 1, out);
   }
   return out;
 }
@@ -172,17 +116,16 @@ async function classifyDestination(itemName, isDir, folders) {
 // touch the filesystem. Callers must show this to the user and only move
 // files via applySortMoves() once the destinations are confirmed.
 async function planSortInbox(authContext = {}) {
-  const inboxDir = safeResolve(SORT_FOLDER);
   let entries;
   try {
-    entries = await fs.readdir(inboxDir, { withFileTypes: true });
+    entries = await ops.listFiles(SORT_FOLDER);
   } catch (err) {
     if (err.code === "ENOENT") return { proposals: [], errors: [], note: `No ${SORT_FOLDER} folder yet - nothing to sort.` };
     throw err;
   }
   if (!entries.length) return { proposals: [], errors: [], note: `${SORT_FOLDER} is empty - nothing to sort.` };
 
-  const folders = await listFolderTree(safeResolve(""), "", 4, []);
+  const folders = await listFolderTree("", 4, []);
   const proposals = [];
   const errors = [];
 
@@ -190,8 +133,8 @@ async function planSortInbox(authContext = {}) {
     const itemName = e.name;
     try {
       logEvent("tool.sort_inbox.plan.start", { ...authContext, item: itemName });
-      const { destination, isNew, reason } = await classifyDestination(itemName, e.isDirectory(), folders);
-      proposals.push({ item: itemName, isDir: e.isDirectory(), destination, isNewFolder: !!isNew, reason });
+      const { destination, isNew, reason } = await classifyDestination(itemName, e.type === "dir", folders);
+      proposals.push({ item: itemName, isDir: e.type === "dir", destination, isNewFolder: !!isNew, reason });
       if (isNew) folders.push(destination);
     } catch (err) {
       logError("tool.sort_inbox.plan.failed", err, { ...authContext, item: itemName });
@@ -219,10 +162,7 @@ async function applySortMoves(moves, authContext = {}) {
     const from = `${SORT_FOLDER}/${itemName}`;
     const to = `${destination}/${itemName}`;
     try {
-      const src = safeResolve(from);
-      const dest = safeResolve(to);
-      await fs.mkdir(path.dirname(dest), { recursive: true });
-      await fs.rename(src, dest);
+      await ops.moveFile(from, to);
       logEvent("file.change.move", { ...authContext, source: "sort_inbox_apply", from, to });
       moved.push({ item: itemName, from, to });
     } catch (err) {
@@ -247,17 +187,9 @@ function buildServer(authContext = {}) {
     },
     async ({ subpath, recursive }) => {
       logEvent("tool.list_files.start", { ...authContext, subpath: subpath || "", recursive: !!recursive });
-      const dir = safeResolve(subpath);
-      if (recursive) {
-        const lines = await listRecursive(dir, subpath || "");
-        logEvent("tool.list_files.ok", { ...authContext, subpath: subpath || "", recursive: true, count: lines.length });
-        return { content: [{ type: "text", text: lines.join("\n") || "(empty)" }] };
-      }
-      const entries = await fs.readdir(dir, { withFileTypes: true });
-      const listing = entries
-        .map((e) => (e.isDirectory() ? "[DIR] " : "[FILE] ") + e.name)
-        .join("\n");
-      logEvent("tool.list_files.ok", { ...authContext, subpath: subpath || "", recursive: false, count: entries.length });
+      const entries = await ops.listFiles(subpath, { recursive });
+      const listing = entries.map((e) => (e.type === "dir" ? "[DIR] " : "[FILE] ") + (e.path ?? e.name)).join("\n");
+      logEvent("tool.list_files.ok", { ...authContext, subpath: subpath || "", recursive: !!recursive, count: entries.length });
       return { content: [{ type: "text", text: listing || "(empty)" }] };
     }
   );
@@ -268,10 +200,9 @@ function buildServer(authContext = {}) {
     { filepath: z.string().describe("Relative path to the file") },
     async ({ filepath }) => {
       logEvent("tool.read_file.start", { ...authContext, filepath });
-      const full = safeResolve(filepath);
-      const buf = await fs.readFile(full);
-      logEvent("tool.read_file.ok", { ...authContext, filepath, bytes: buf.length });
-      return { content: [{ type: "text", text: decodeText(buf) }] };
+      const data = await ops.readFile(filepath);
+      logEvent("tool.read_file.ok", { ...authContext, filepath, chars: data.length });
+      return { content: [{ type: "text", text: data }] };
     }
   );
 
@@ -284,24 +215,19 @@ function buildServer(authContext = {}) {
     },
     async ({ filepath, content }) => {
       logEvent("tool.write_file.start", { ...authContext, filepath, chars: content.length });
-      const full = safeResolve(filepath);
-      await fs.mkdir(path.dirname(full), { recursive: true });
-      await fs.writeFile(full, content, "utf-8");
+      await ops.writeFile(filepath, content);
       logEvent("file.change.write", { ...authContext, source: "mcp_tool", filepath, chars: content.length });
-      return {
-        content: [{ type: "text", text: `Wrote ${content.length} chars to ${filepath}` }],
-      };
+      return { content: [{ type: "text", text: `Wrote ${content.length} chars to ${filepath}` }] };
     }
   );
 
   server.tool(
     "delete_file",
-    "Delete a file from the Master Hive store",
+    "Delete a file or folder from the Master Hive store",
     { filepath: z.string().describe("Relative path to the file") },
     async ({ filepath }) => {
       logEvent("tool.delete_file.start", { ...authContext, filepath });
-      const full = safeResolve(filepath);
-      await fs.unlink(full);
+      await ops.deleteFile(filepath);
       logEvent("file.change.delete", { ...authContext, source: "mcp_tool", filepath });
       return { content: [{ type: "text", text: `Deleted ${filepath}` }] };
     }
@@ -316,12 +242,70 @@ function buildServer(authContext = {}) {
     },
     async ({ from, to }) => {
       logEvent("tool.move_file.start", { ...authContext, from, to });
-      const src = safeResolve(from);
-      const dest = safeResolve(to);
-      await fs.mkdir(path.dirname(dest), { recursive: true });
-      await fs.rename(src, dest);
+      await ops.moveFile(from, to);
       logEvent("file.change.move", { ...authContext, source: "mcp_tool", from, to });
       return { content: [{ type: "text", text: `Moved ${from} -> ${to}` }] };
+    }
+  );
+
+  server.tool(
+    "mkdir",
+    "Create a folder (and any missing parent folders) in the Master Hive store",
+    { subpath: z.string().describe("Relative folder path to create") },
+    async ({ subpath }) => {
+      logEvent("tool.mkdir.start", { ...authContext, subpath });
+      await ops.makeDir(subpath);
+      logEvent("file.change.mkdir", { ...authContext, source: "mcp_tool", subpath });
+      return { content: [{ type: "text", text: `Created folder ${subpath}` }] };
+    }
+  );
+
+  server.tool(
+    "stat_file",
+    "Get size, modified time, and sha256 hash of a file in the Master Hive store",
+    { filepath: z.string().describe("Relative path to the file") },
+    async ({ filepath }) => {
+      logEvent("tool.stat_file.start", { ...authContext, filepath });
+      const info = await ops.statFile(filepath);
+      logEvent("tool.stat_file.ok", { ...authContext, filepath });
+      return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "search_files",
+    "Search file contents for a substring within the Master Hive store",
+    {
+      query: z.string().describe("Substring to search for"),
+      subpath: z.string().optional().describe("Relative subfolder to search, default root"),
+    },
+    async ({ query, subpath }) => {
+      logEvent("tool.search_files.start", { ...authContext, query, subpath: subpath || "" });
+      const matches = await ops.searchFiles(query, subpath);
+      logEvent("tool.search_files.ok", { ...authContext, query, matchCount: matches.length });
+      const text = matches.length ? matches.map((m) => `${m.path}:${m.line}: ${m.text}`).join("\n") : "(no matches)";
+      return { content: [{ type: "text", text }] };
+    }
+  );
+
+  server.tool(
+    "fetch_url_to_file",
+    "Download a URL's text content and save it into the Master Hive store",
+    {
+      url: z.string().url().describe("URL to fetch"),
+      filepath: z.string().describe("Relative path to save the content to"),
+    },
+    async ({ url, filepath }) => {
+      logEvent("tool.fetch_url_to_file.start", { ...authContext, url, filepath });
+      const resp = await fetch(url, { redirect: "follow" });
+      if (!resp.ok) throw new Error(`Fetch failed: ${resp.status} ${resp.statusText}`);
+      const buf = Buffer.from(await resp.arrayBuffer());
+      if (buf.length > FETCH_MAX_BYTES) {
+        throw new Error(`Response too large (${buf.length} bytes, max ${FETCH_MAX_BYTES})`);
+      }
+      await ops.writeFile(filepath, buf.toString("utf-8"));
+      logEvent("file.change.write", { ...authContext, source: "mcp_tool_fetch_url", filepath, bytes: buf.length, url });
+      return { content: [{ type: "text", text: `Saved ${buf.length} bytes from ${url} to ${filepath}` }] };
     }
   );
 
@@ -458,7 +442,7 @@ app.post("/mcp", async (req, res) => {
 // directly (upload/download need raw bytes, which doesn't map cleanly onto
 // MCP tool calls over JSON-RPC).
 
-app.get("/api/ping", (req, res) => res.json({ ok: true }));
+app.get("/api/ping", (req, res) => res.json({ ok: true, name: "master-hive" }));
 
 app.use("/api", async (req, res, next) => {
   if (req.path === "/ping") return next();
@@ -469,7 +453,7 @@ app.use("/api", async (req, res, next) => {
 
 app.get("/api/manifest", async (req, res) => {
   try {
-    const files = await listManifest(safeResolve(""), "");
+    const files = await ops.manifest();
     logEvent("api.manifest.ok", { ...requestContext(req), count: files.length });
     res.json({ files });
   } catch (err) {
@@ -480,7 +464,7 @@ app.get("/api/manifest", async (req, res) => {
 
 app.get("/api/files", async (req, res) => {
   try {
-    const dir = safeResolve(req.query.subpath);
+    const dir = ops.safeResolve(req.query.subpath);
     const entries = await fs.readdir(dir, { withFileTypes: true });
     const withStats = await Promise.all(
       entries.map(async (e) => {
@@ -499,10 +483,9 @@ app.get("/api/files", async (req, res) => {
 
 app.get("/api/file", async (req, res) => {
   try {
-    const full = safeResolve(req.query.path);
-    const buf = await fs.readFile(full);
-    logEvent("api.file.read.ok", { ...requestContext(req), path: req.query.path, bytes: buf.length });
-    res.json({ content: decodeText(buf) });
+    const content = await ops.readFile(req.query.path);
+    logEvent("api.file.read.ok", { ...requestContext(req), path: req.query.path, chars: content.length });
+    res.json({ content });
   } catch (err) {
     logError("api.file.read.failed", err, { ...requestContext(req), path: req.query.path });
     res.status(400).json({ error: err.message });
@@ -511,9 +494,7 @@ app.get("/api/file", async (req, res) => {
 
 app.put("/api/file", async (req, res) => {
   try {
-    const full = safeResolve(req.body.path);
-    await fs.mkdir(path.dirname(full), { recursive: true });
-    await fs.writeFile(full, req.body.content ?? "", "utf-8");
+    await ops.writeFile(req.body.path, req.body.content ?? "");
     logEvent("file.change.write", { ...requestContext(req), source: "rest_api", path: req.body.path, chars: (req.body.content ?? "").length });
     res.json({ ok: true });
   } catch (err) {
@@ -524,14 +505,8 @@ app.put("/api/file", async (req, res) => {
 
 app.delete("/api/file", async (req, res) => {
   try {
-    const full = safeResolve(req.query.path);
-    const stat = await fs.stat(full);
-    if (stat.isDirectory()) {
-      await fs.rm(full, { recursive: true, force: true });
-    } else {
-      await fs.unlink(full);
-    }
-    logEvent("file.change.delete", { ...requestContext(req), source: "rest_api", path: req.query.path, type: stat.isDirectory() ? "dir" : "file" });
+    await ops.deleteFile(req.query.path);
+    logEvent("file.change.delete", { ...requestContext(req), source: "rest_api", path: req.query.path });
     res.json({ ok: true });
   } catch (err) {
     logError("api.file.delete.failed", err, { ...requestContext(req), path: req.query.path });
@@ -541,16 +516,55 @@ app.delete("/api/file", async (req, res) => {
 
 app.post("/api/move", async (req, res) => {
   try {
-    const src = safeResolve(req.body.from);
-    const dest = safeResolve(req.body.to);
-    await fs.mkdir(path.dirname(dest), { recursive: true });
-    await fs.rename(src, dest);
+    await ops.moveFile(req.body.from, req.body.to);
     logEvent("file.change.move", { ...requestContext(req), source: "rest_api", from: req.body.from, to: req.body.to });
     res.json({ ok: true });
   } catch (err) {
     logError("api.move.failed", err, { ...requestContext(req), from: req.body?.from, to: req.body?.to });
     res.status(400).json({ error: err.message });
   }
+});
+
+app.post("/api/mkdir", async (req, res) => {
+  try {
+    await ops.makeDir(req.body.path);
+    logEvent("file.change.mkdir", { ...requestContext(req), source: "rest_api", path: req.body.path });
+    res.json({ ok: true });
+  } catch (err) {
+    logError("api.mkdir.failed", err, { ...requestContext(req), path: req.body?.path });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/api/download", async (req, res) => {
+  try {
+    const full = ops.safeResolve(req.query.path);
+    logEvent("api.download.start", { ...requestContext(req), path: req.query.path });
+    res.download(full, path.basename(full));
+  } catch (err) {
+    logError("api.download.failed", err, { ...requestContext(req), path: req.query.path });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Raw binary body, path given as a query param (browsers set Content-Type to
+// the file's own mime type on upload, so accept any content-type here).
+app.post("/api/upload", express.raw({ type: () => true, limit: "2gb" }), async (req, res) => {
+  try {
+    await ops.writeFile(req.query.path, req.body);
+    logEvent("file.change.upload", { ...requestContext(req), source: "rest_api", path: req.query.path, bytes: req.body.length });
+    res.json({ ok: true, bytes: req.body.length });
+  } catch (err) {
+    logError("api.upload.failed", err, { ...requestContext(req), path: req.query.path });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Read-only summary of connected MCP clients (Claude/ChatGPT DCR registrations
+// + which accounts hold a refresh token) - no secrets included.
+app.get("/api/oauth-state", (req, res) => {
+  logEvent("api.oauth_state.ok", requestContext(req));
+  res.json(getOAuthState());
 });
 
 app.post("/api/sort/preview", async (req, res) => {
@@ -573,51 +587,6 @@ app.post("/api/sort/apply", async (req, res) => {
     logError("api.sort.apply.failed", err, requestContext(req));
     res.status(500).json({ error: err.message });
   }
-});
-
-app.post("/api/mkdir", async (req, res) => {
-  try {
-    const full = safeResolve(req.body.path);
-    await fs.mkdir(full, { recursive: true });
-    logEvent("file.change.mkdir", { ...requestContext(req), source: "rest_api", path: req.body.path });
-    res.json({ ok: true });
-  } catch (err) {
-    logError("api.mkdir.failed", err, { ...requestContext(req), path: req.body?.path });
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.get("/api/download", async (req, res) => {
-  try {
-    const full = safeResolve(req.query.path);
-    logEvent("api.download.start", { ...requestContext(req), path: req.query.path });
-    res.download(full, path.basename(full));
-  } catch (err) {
-    logError("api.download.failed", err, { ...requestContext(req), path: req.query.path });
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// Raw binary body, path given as a query param (browsers set Content-Type to
-// the file's own mime type on upload, so accept any content-type here).
-app.post("/api/upload", express.raw({ type: () => true, limit: "2gb" }), async (req, res) => {
-  try {
-    const full = safeResolve(req.query.path);
-    await fs.mkdir(path.dirname(full), { recursive: true });
-    await fs.writeFile(full, req.body);
-    logEvent("file.change.upload", { ...requestContext(req), source: "rest_api", path: req.query.path, bytes: req.body.length });
-    res.json({ ok: true, bytes: req.body.length });
-  } catch (err) {
-    logError("api.upload.failed", err, { ...requestContext(req), path: req.query.path });
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// Read-only summary of connected MCP clients (Claude/ChatGPT DCR registrations
-// + which accounts hold a refresh token) - no secrets included.
-app.get("/api/oauth-state", (req, res) => {
-  logEvent("api.oauth_state.ok", requestContext(req));
-  res.json(getOAuthState());
 });
 
 app.listen(PORT, async () => {
