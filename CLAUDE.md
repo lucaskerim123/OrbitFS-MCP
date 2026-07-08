@@ -11,12 +11,21 @@ surface and [LIVE_SERVER_STRUCTURE.md](LIVE_SERVER_STRUCTURE.md) for safety rule
 - Hive server (this repo): plain `node server.js` process, not a Windows service.
   Started/watched by [start-hive.ps1](start-hive.ps1). Listens on `PORT` from `.env`
   (currently 3939) — liveness check: `GET /api/ping`.
+  Restart: kill the matching `node.exe` process and rerun `start-hive.ps1` (or
+  `node server.js` directly). Logs: `logs/master-hive-events.jsonl` (and
+  `-errors.jsonl` on failure).
 - cloudflared tunnel: also a plain process (`Get-Process cloudflared`), not a service.
 - Web panel (`the-master-brain`): runs as an NSSM Windows service, `MasterBrainPanel`,
   on port 4000. Restart with `Restart-Service -Name MasterBrainPanel -Force`.
   **Known bug:** NSSM's stop acknowledges without cleanly killing the headless Node
   child, so the panel's own Stop/Restart buttons are unreliable — restart the
   Windows service directly instead.
+
+## Key files
+
+- `hive-ops.js` — shared file-op logic used by both MCP tools and REST routes in
+  `server.js`: enforces that paths can't escape `HIVE_ROOT` (`safeResolve`) and
+  detects UTF-16/UTF-8 BOMs so files saved by other editors round-trip correctly.
 
 ## PowerShell from the Bash tool
 
