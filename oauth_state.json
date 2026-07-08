@@ -59,6 +59,13 @@
       {
         "email": "lucaskerim@gmail.com"
       }
+    ],
+    [
+      "c4d1deadd7897c18959d3614be2575397a212cacd091a5fd",
+      {
+        "email": "lucaskerim@gmail.com",
+        "flow": "chatgpt"
+      }
     ]
   ]
 }
