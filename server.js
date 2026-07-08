@@ -168,41 +168,70 @@ async function classifyDestination(itemName, isDir, folders) {
   return parsed;
 }
 
-async function sortInbox(authContext = {}) {
+// Dry run: asks the model where each _sorter item should go, but does not
+// touch the filesystem. Callers must show this to the user and only move
+// files via applySortMoves() once the destinations are confirmed.
+async function planSortInbox(authContext = {}) {
   const inboxDir = safeResolve(SORT_FOLDER);
   let entries;
   try {
     entries = await fs.readdir(inboxDir, { withFileTypes: true });
   } catch (err) {
-    if (err.code === "ENOENT") return { moved: [], errors: [], note: `No ${SORT_FOLDER} folder yet - nothing to sort.` };
+    if (err.code === "ENOENT") return { proposals: [], errors: [], note: `No ${SORT_FOLDER} folder yet - nothing to sort.` };
     throw err;
   }
+  if (!entries.length) return { proposals: [], errors: [], note: `${SORT_FOLDER} is empty - nothing to sort.` };
 
   const folders = await listFolderTree(safeResolve(""), "", 4, []);
-  const moved = [];
+  const proposals = [];
   const errors = [];
 
   for (const e of entries) {
     const itemName = e.name;
     try {
-      logEvent("tool.sort_inbox.item.start", { ...authContext, item: itemName });
+      logEvent("tool.sort_inbox.plan.start", { ...authContext, item: itemName });
       const { destination, isNew, reason } = await classifyDestination(itemName, e.isDirectory(), folders);
-      const from = `${SORT_FOLDER}/${itemName}`;
-      const to = `${destination}/${itemName}`;
-      const src = safeResolve(from);
-      const dest = safeResolve(to);
-      await fs.mkdir(path.dirname(dest), { recursive: true });
-      await fs.rename(src, dest);
-      logEvent("file.change.move", { ...authContext, source: "sort_inbox", from, to, isNew: !!isNew, reason });
-      moved.push({ item: itemName, from, to, isNewFolder: !!isNew, reason });
+      proposals.push({ item: itemName, isDir: e.isDirectory(), destination, isNewFolder: !!isNew, reason });
       if (isNew) folders.push(destination);
     } catch (err) {
-      logError("tool.sort_inbox.item.failed", err, { ...authContext, item: itemName });
+      logError("tool.sort_inbox.plan.failed", err, { ...authContext, item: itemName });
       errors.push({ item: itemName, error: err.message });
     }
   }
 
-  logEvent("tool.sort_inbox.done", { ...authContext, movedCount: moved.length, errorCount: errors.length });
+  logEvent("tool.sort_inbox.planned", { ...authContext, proposedCount: proposals.length, errorCount: errors.length });
+  return { proposals, errors };
+}
+
+// Executes an explicitly confirmed set of moves out of _sorter - the
+// destinations the caller already showed the user, possibly edited by them.
+async function applySortMoves(moves, authContext = {}) {
+  const moved = [];
+  const errors = [];
+
+  for (const move of moves || []) {
+    const itemName = move?.item;
+    const destination = typeof move?.destination === "string" ? move.destination.replace(/^\/+|\/+$/g, "").trim() : "";
+    if (!itemName || !destination) {
+      errors.push({ item: itemName || "(unknown)", error: "Missing item or destination" });
+      continue;
+    }
+    const from = `${SORT_FOLDER}/${itemName}`;
+    const to = `${destination}/${itemName}`;
+    try {
+      const src = safeResolve(from);
+      const dest = safeResolve(to);
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.rename(src, dest);
+      logEvent("file.change.move", { ...authContext, source: "sort_inbox_apply", from, to });
+      moved.push({ item: itemName, from, to });
+    } catch (err) {
+      logError("tool.sort_inbox.apply.failed", err, { ...authContext, item: itemName, from, to });
+      errors.push({ item: itemName, error: err.message });
+    }
+  }
+
+  logEvent("tool.sort_inbox.applied", { ...authContext, movedCount: moved.length, errorCount: errors.length });
   return { moved, errors };
 }
 
@@ -297,16 +326,39 @@ function buildServer(authContext = {}) {
   );
 
   server.tool(
-    "sort_inbox",
-    `Sort everything sitting in the "${SORT_FOLDER}" staging folder into its real home elsewhere in the Master Hive store. Asks the model to pick the best matching existing folder (or a sensible new one) for each item, then moves it there.`,
+    "preview_sort_inbox",
+    `Preview where each item sitting in the "${SORT_FOLDER}" staging folder would go if sorted. Does NOT move anything - show this to the user and only call apply_sort_inbox once they've confirmed the destinations (they may want to edit some).`,
     {},
     async () => {
-      logEvent("tool.sort_inbox.start", authContext);
-      const { moved, errors, note } = await sortInbox(authContext);
+      logEvent("tool.sort_inbox.preview_call", authContext);
+      const { proposals, errors, note } = await planSortInbox(authContext);
       if (note) return { content: [{ type: "text", text: note }] };
-      const lines = moved.map((m) => `${m.item} -> ${m.to}${m.isNewFolder ? " (new folder)" : ""} - ${m.reason}`);
+      const lines = proposals.map((p) => `${p.item} -> ${p.destination}${p.isNewFolder ? " (new folder)" : ""} - ${p.reason}`);
+      if (errors.length) lines.push("", "Could not classify:", ...errors.map((e) => `${e.item}: ${e.error}`));
+      lines.push("", "Nothing has moved yet. Confirm with the user, then call apply_sort_inbox with the item/destination pairs they approve.");
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  );
+
+  server.tool(
+    "apply_sort_inbox",
+    `Move the confirmed items out of "${SORT_FOLDER}" to the given destinations. Only call this after preview_sort_inbox and explicit user confirmation of each destination - do not guess destinations here.`,
+    {
+      moves: z
+        .array(
+          z.object({
+            item: z.string().describe(`Name of the file/folder inside ${SORT_FOLDER} to move`),
+            destination: z.string().describe("Confirmed destination folder (relative path, no leading/trailing slash)"),
+          })
+        )
+        .describe("Confirmed item -> destination pairs from preview_sort_inbox"),
+    },
+    async ({ moves }) => {
+      logEvent("tool.sort_inbox.apply_call", { ...authContext, count: moves.length });
+      const { moved, errors } = await applySortMoves(moves, authContext);
+      const lines = moved.map((m) => `${m.item} -> ${m.to}`);
       if (errors.length) lines.push("", "Errors:", ...errors.map((e) => `${e.item}: ${e.error}`));
-      return { content: [{ type: "text", text: lines.join("\n") || "Nothing to sort." }] };
+      return { content: [{ type: "text", text: lines.join("\n") || "Nothing moved." }] };
     }
   );
 
@@ -501,13 +553,24 @@ app.post("/api/move", async (req, res) => {
   }
 });
 
-app.post("/api/sort", async (req, res) => {
+app.post("/api/sort/preview", async (req, res) => {
   try {
-    const result = await sortInbox({ ...requestContext(req), source: "rest_api" });
-    logEvent("api.sort.ok", { ...requestContext(req), movedCount: result.moved.length, errorCount: result.errors.length });
+    const result = await planSortInbox({ ...requestContext(req), source: "rest_api" });
+    logEvent("api.sort.preview.ok", { ...requestContext(req), proposedCount: result.proposals.length, errorCount: result.errors.length });
     res.json(result);
   } catch (err) {
-    logError("api.sort.failed", err, requestContext(req));
+    logError("api.sort.preview.failed", err, requestContext(req));
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/sort/apply", async (req, res) => {
+  try {
+    const result = await applySortMoves(req.body?.moves, { ...requestContext(req), source: "rest_api" });
+    logEvent("api.sort.apply.ok", { ...requestContext(req), movedCount: result.moved.length, errorCount: result.errors.length });
+    res.json(result);
+  } catch (err) {
+    logError("api.sort.apply.failed", err, requestContext(req));
     res.status(500).json({ error: err.message });
   }
 });
