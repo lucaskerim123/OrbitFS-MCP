@@ -21,17 +21,12 @@ const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
 const SORT_FOLDER = "_sorter";
 const TRASH_FOLDER = "🗑 Trash";
 const LEGACY_TRASH_FOLDERS = ["_trash"];
-const PROTECTED_ROOT_FOLDERS = new Set([
-  "_system",
-  "_sorter",
-  "🗑 Trash",
-  "_trash",
-  "0. Core Folder",
-  "1. Master Court System",
-  "2. Mental Health System",
-  "3. Legal Charges - AVO",
-  "Media",
-]);
+// TEMPORARILY EMPTY during the top-level folder redesign - delete/move/trash
+// protection for root folders is off. Restore the real list below once the
+// new structure is settled:
+//   "_system", "_sorter", "🗑 Trash", "0. Core", "1. Legal",
+//   "2. Wellbeing", "_media"
+const PROTECTED_ROOT_FOLDERS = new Set([]);
 const SORT_MODEL = process.env.SORT_MODEL || "claude-haiku-4-5-20251001";
 const DEFAULT_TRASH_RETENTION_DAYS = Number(process.env.TRASH_RETENTION_DAYS || 4);
 const TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -58,10 +53,10 @@ const FIRESTORM_OPTIONAL_FILES = {
   fileIndex: "_system/Index/file_index.json",
 };
 const FIRESTORM_PROJECT_FOLDERS = {
-  Master: ["_system", "0. Core Folder"],
-  Court: ["1. Master Court System", "3. Legal Charges - AVO"],
-  Mental: ["2. Mental Health System"],
-  Media: ["Media"],
+  Master: ["_system", "0. Core"],
+  Court: ["1. Legal"],
+  Mental: ["2. Wellbeing"],
+  Media: ["_media"],
 };
 const FIRESTORM_LOAD_ALIASES = {
   light: "low",

@@ -10,7 +10,7 @@ It exposes the FireStorm root at `HIVE_ROOT` over:
 ## What it serves
 
 - Shared FireStorm content at `C:\Project FireStorm\The Master Hive`
-- Protected system roots like `_system`, `0. Core Folder`, `Media`, and the other project roots
+- Protected system roots like `_system`, `0. Core Folder`, `_media`, and the other project roots
 - `🗑 Trash` as the soft-delete bin
 - `/emptybin`-style permanent deletion for trash contents
 - `preview_sort_inbox` / `apply_sort_inbox` for `_sorter`

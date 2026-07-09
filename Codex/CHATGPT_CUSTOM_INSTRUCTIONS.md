@@ -28,6 +28,12 @@ Project startup files:
 - Mental -> `_system/Startup/02_MENTAL_HEALTH_SYSTEM_STARTUP.md`
 - Media -> `_system/Startup/03_MEDIA_STARTUP.md`
 
+Media is photos, videos, and other binary content, not text documents -
+`readFile` won't produce useful results there. Use `downloadFile` or
+`getFileWebLink` (`/openfileweb <file>`) to actually view a Media file.
+The folder itself is named `_media` (underscore prefix), even though the
+project name in `/startup Media` has no underscore.
+
 Always load these rule files during startup:
 - `_system/Rules/load_order.md`
 - `_system/Rules/project_rules.md`

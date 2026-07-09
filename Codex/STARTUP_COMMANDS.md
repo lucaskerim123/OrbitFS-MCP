@@ -187,13 +187,25 @@ Confirmation:
 
 ### Media
 
+Content:
+
+Photos, videos, and other binary media - not text documents. `read_file`
+and `search_files` (and their `/read`/`/search` commands) only work on
+text content and won't produce useful results here. Use `/openfileweb
+<file>` to actually view a photo or video, or `/list _media` to browse
+what's there.
+
+The folder itself is named `_media` (underscore prefix, matching `_system`
+and `_sorter`) even though the project name used in `/startup Media` stays
+"Media" without the underscore.
+
 Startup file:
 
 `_system/Startup/03_MEDIA_STARTUP.md`
 
 Relevant folders:
 
-- `Media`
+- `_media`
 
 Confirmation:
 
