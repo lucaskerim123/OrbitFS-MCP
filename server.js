@@ -726,6 +726,7 @@ function buildServer(authContext = {}) {
 }
 
 const app = express();
+let serverHandle = null;
 
 mountOAuth(app, {
   publicBaseUrl: PUBLIC_BASE_URL,
@@ -1021,7 +1022,27 @@ app.post("/api/startup", async (req, res) => {
   }
 });
 
-app.listen(PORT, async () => {
+app.post("/api/admin/shutdown", async (req, res) => {
+  logEvent("api.admin.shutdown.requested", requestContext(req));
+  res.json({ ok: true, shuttingDown: true });
+  setTimeout(() => {
+    if (!serverHandle) {
+      process.exit(0);
+      return;
+    }
+    serverHandle.close((err) => {
+      if (err) {
+        logError("api.admin.shutdown.failed", err, requestContext(req));
+        process.exit(1);
+        return;
+      }
+      logEvent("api.admin.shutdown.complete", requestContext(req));
+      process.exit(0);
+    });
+  }, 50);
+});
+
+serverHandle = app.listen(PORT, async () => {
   await fs.mkdir(LOG_DIR, { recursive: true }).catch(() => {});
   purgeExpiredTrash({ source: "startup" }).catch((err) => logError("trash.autopurge.startup.failed", err));
   setInterval(() => {
