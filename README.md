@@ -48,6 +48,12 @@ npm start
 
 For local dev, `node server.js` also works.
 
+Setting up on a brand new machine (fresh VPS, etc.)? Copy `.env.example` to
+`.env` and fill in the values, or use `the-master-brain`'s
+`deploy/Install-BaseStructure.ps1`, which creates the `HIVE_ROOT` folder
+skeleton, generates `.env` for this repo, and runs `npm install` in one
+step. Full walkthrough: `the-master-brain/GETTING_STARTED.md`.
+
 ## API summary
 
 - `GET /api/ping` - liveness
