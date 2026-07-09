@@ -1,4 +1,4 @@
-import path from "path";
+﻿import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), ".env") });
@@ -76,6 +76,7 @@ const HIVE_LOCAL_PING_URL = `http://127.0.0.1:${PORT}/api/ping`;
 const MASTER_BRAIN_SERVICE_NAME = process.env.PANEL_SERVICE_NAME || "MasterBrainPanel";
 const HIVE_SERVICE_NAME = process.env.HIVE_SERVICE_NAME || "MasterHiveServer";
 const TUNNEL_SERVICE_NAME = process.env.TUNNEL_SERVICE_NAME || "MasterHiveTunnel";
+const POWERSHELL_EXE = process.env.POWERSHELL_EXE || "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 
 function logEvent(event, fields = {}) {
   const line = JSON.stringify({ ts: new Date().toISOString(), event, ...fields });
@@ -120,7 +121,7 @@ foreach ($name in $services) {
 $result | ConvertTo-Json -Compress
 `;
   try {
-    const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
+    const { stdout } = await execFileAsync(POWERSHELL_EXE, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
       timeout: 15000,
       maxBuffer: 1024 * 1024,
       windowsHide: true,
@@ -148,6 +149,7 @@ async function readLastErrorBrief(filepath) {
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
         const parsed = JSON.parse(lines[i]);
+        if (["auth.jwt.failed", "auth.missing"].includes(parsed.event)) continue;
         return parsed.error || parsed.event || lines[i].slice(0, 200);
       } catch {}
     }
@@ -192,7 +194,9 @@ async function buildServerStatusReport() {
   const hiveStatus = hiveLocal.ok
     ? (services.tunnel.running ? "Local ping OK; tunnel service running." : "Local ping OK; tunnel service not running.")
     : (services.hive.running ? `Hive service running, but local ping failed${hiveLocal.error ? `: ${hiveLocal.error}` : "."}` : `Hive service ${services.hive.status}.`);
-  const hiveErrors = hiveErrorBrief || [!services.hive.running ? `Hive service ${services.hive.status}` : null, hiveLocal.error].filter(Boolean).join("; ") || "None detected from recent Hive logs.";
+  const hiveErrors = hiveLocal.ok && services.hive.running
+    ? "None detected from local checks."
+    : (hiveErrorBrief || [!services.hive.running ? `Hive service ${services.hive.status}` : null, hiveLocal.error].filter(Boolean).join("; ") || "None detected from recent Hive logs.");
 
   const chatgptStatus = classifyConnectionStatus(oauthState.clients || [], oauthState.refreshTokens || [], "chatgpt");
   const claudeStatus = classifyConnectionStatus(oauthState.clients || [], oauthState.refreshTokens || [], "claude");
@@ -758,6 +762,17 @@ function buildServer(authContext = {}) {
   );
 
   server.tool(
+    "server_status",
+    "Get a live status report for Master Brain, Hive, ChatGPT, and Claude. Triggered by the user typing `/server-status`, `server status`, `show server status`, or `show hive status`.",
+    {},
+    async () => {
+      logEvent("tool.server_status.start", authContext);
+      const report = await buildServerStatusReport();
+      logEvent("tool.server_status.ok", authContext);
+      return { content: [{ type: "text", text: report.text }] };
+    }
+  );
+  server.tool(
     "open_file_web",
     "Get a link to open a Master Hive file directly in a web browser. Triggered by the user typing `/openfileweb <file>`. Returns a URL that renders the file inline (PDF, image, text, etc.) or lets the browser handle it; the link is single-file-scoped and expires in 15 minutes.",
     { filepath: z.string().describe("Relative path to the file") },
@@ -976,6 +991,13 @@ function buildServer(authContext = {}) {
     "stat_file"
   );
 
+  toolPrompt(
+    "server-status",
+    "Get a live status report for Master Brain, Hive, ChatGPT, and Claude",
+    {},
+    "server_status",
+    "Reply with the returned text exactly and do not add any extra commentary."
+  );
   toolPrompt(
     "move",
     "Move or rename a file or folder",
@@ -1406,6 +1428,11 @@ serverHandle = app.listen(PORT, async () => {
   }, TRASH_PURGE_INTERVAL_MS).unref();
   logEvent("server.start", { port: PORT, root: ROOT, publicBaseUrl: PUBLIC_BASE_URL });
 });
+
+
+
+
+
 
 
 

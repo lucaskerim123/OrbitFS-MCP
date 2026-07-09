@@ -5,9 +5,12 @@ its own MCP prompt setup separately.
 
 ChatGPT should map these messages onto Actions:
 
-| Command | Args | Action | Notes |
+| Trigger | Args | Action | Notes |
 |---|---|---|---|
-| `/server-status` | none | `getServerStatus` | Returns the live Master Brain / Hive / ChatGPT / Claude status report text. |
+| `/server-status` | none | `getServerStatus` | Exact hard trigger. Return `text` exactly. |
+| `server status` | none | `getServerStatus` | Plain-English hard trigger. |
+| `show server status` | none | `getServerStatus` | Plain-English hard trigger. |
+| `show hive status` | none | `getServerStatus` | Plain-English hard trigger. |
 | `/openfileweb` | `filepath` | `getFileWebLink` | Returns a browser link for one file. |
 | `/startup` | `project`, `load_level` | `startupFirestorm` | Defaults load to `med`. Accepts `light/normal/full`. |
 | `/list` | `subpath` | `listFolder` | Omit `subpath` for root. |
@@ -27,4 +30,3 @@ Deliberately not mapped as quick ChatGPT commands:
 - `uploadFile` - binary upload is not a good typed-text command
 - `getTrashConfig` / `setTrashConfig` - admin config, better as explicit Actions
 - `getOAuthState` - operational/admin, not a normal user command
-
