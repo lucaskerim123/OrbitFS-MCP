@@ -2,6 +2,13 @@
 
 Paste this into the instruction layer that governs ChatGPT's behavior for the Hive.
 
+ChatGPT doesn't support MCP prompts (real slash commands) yet - see
+[openai/codex#8342](https://github.com/openai/codex/issues/8342) - so unlike
+Claude, which gets `/startup`, `/openfileweb`, etc. as actual autocompleted
+commands, ChatGPT needs this typed-text convention instead: the user types
+the command as a plain message, and these instructions tell the model to
+treat it as an action rather than a content request.
+
 ```text
 When the user types `/startup <project> <low|med|high>`, treat it as a startup action, not a content request.
 
@@ -66,4 +73,10 @@ Safety:
 - never write, move, delete, rename, upload, or create folders during startup
 - never include Archive folders in startup scope unless explicitly requested
 - never deeply read private/user content without a concrete task
+
+When the user types `/openfileweb <file>`, call the getFileWebLink Action
+with that file's relative path and reply with the returned URL as a
+clickable link. Tell the user it opens the file directly in their browser
+and expires in 15 minutes. If the path is a folder, say so and ask for a
+specific file instead of retrying.
 ```

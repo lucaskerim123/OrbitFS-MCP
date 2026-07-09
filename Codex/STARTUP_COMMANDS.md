@@ -219,57 +219,16 @@ Actions:
 6. List top-level folders for the requested projects only.
 7. Confirm with the startup lines from both project startup files.
 
-## Shortcut Commands
+## No Per-Project Shortcuts
 
-These are aliases for `/startup`.
+There is no `/court`, `/mental`, `/media`, or `/firestorm` command. Use
+`/startup <project> <low|med|high>` for all projects, including Master -
+see the Project Map above for the full list of valid project names.
 
-```text
-/court low
-/court med
-/court high
-```
-
-Same as:
-
-```text
-/startup Court <low|med|high>
-```
-
-```text
-/mental low
-/mental med
-/mental high
-```
-
-Same as:
-
-```text
-/startup Mental <low|med|high>
-```
-
-```text
-/media low
-/media med
-/media high
-```
-
-Same as:
-
-```text
-/startup Media <low|med|high>
-```
-
-```text
-/firestorm low
-/firestorm med
-/firestorm high
-```
-
-Same as:
-
-```text
-/startup Master <low|med|high>
-```
+`/firestorm` in particular is not a project name. "Project FireStorm" is
+the name of the whole system; "The Master Hive" is its root folder; Master,
+Court, Mental, and Media are the projects inside it. Do not treat
+"FireStorm" as an alias for the Master project.
 
 ## Safety
 

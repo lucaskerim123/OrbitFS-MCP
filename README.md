@@ -68,9 +68,35 @@ step. Full walkthrough: `the-master-brain/GETTING_STARTED.md`.
 - `POST /api/move` - move/rename
 - `POST /api/mkdir` - create a folder
 - `GET /api/download?path=` - download raw bytes
+- `GET /api/open-link?path=` - get a link that opens a file directly in a browser tab (`/openfileweb <file>`, 15-minute expiry)
 - `POST /api/upload?path=` - upload raw bytes
 - `GET /api/oauth-state` - connected MCP clients and refresh-token accounts
 - `POST /api/sort/preview` / `POST /api/sort/apply` - two-step sort workflow
+
+## Slash commands (MCP prompts)
+
+`/openfileweb`, `/startup`, and `/emptybin` are registered as real MCP
+prompts (`server.prompt(...)` in `server.js`), not just a text convention
+the model has to infer. `/startup` takes a project name (Master, Court,
+Mental, Media, or combined with `:` like `Court:Mental`) - there are no
+separate per-project shortcut commands. Each prompt seeds a user turn
+telling the model which tool to call, so the underlying work still runs
+through the normal tools (`open_file_web`, `startup_firestorm`,
+`empty_trash`).
+
+Client support is uneven, so what "real slash command" actually gets you
+depends on the client:
+
+- **Claude** lists and autocompletes these as real slash commands today -
+  confirmed against the live server via `prompts/list`/`prompts/get`.
+- **ChatGPT** does not support MCP prompts at all yet, in either lane
+  (Developer Mode MCP connector or the legacy Custom GPT/Actions lane) -
+  see [openai/codex#8342](https://github.com/openai/codex/issues/8342).
+  Registering the prompts here costs nothing and is ready for whenever
+  OpenAI ships client support, but for now ChatGPT still needs the
+  typed-text convention documented in `Codex/CHATGPT_CUSTOM_INSTRUCTIONS.md`
+  (type `/openfileweb <file>` as a normal message; custom instructions tell
+  the model to map it onto the `getFileWebLink` Action).
 
 ## Notes
 

@@ -767,6 +767,101 @@ function buildServer(authContext = {}) {
     }
   );
 
+  // --- Prompts: real client-side slash commands (autocomplete + argument
+  // prompts in Claude's UI), not just text convention the model has to
+  // infer. Each one seeds a user turn naming the exact tool + args to call,
+  // so the actual work still happens through the tools above. Arg names
+  // always match the underlying tool's own param names.
+  function toolPrompt(name, description, argsShape, toolName, extraInstruction) {
+    server.prompt(name, description, argsShape, async (args) => {
+      const argText = Object.entries(args)
+        .filter(([, v]) => v !== undefined && v !== "")
+        .map(([k, v]) => `${k}="${v}"`)
+        .join(", ");
+      const text = [`Use the ${toolName} tool${argText ? ` with ${argText}` : ""}.`, extraInstruction]
+        .filter(Boolean)
+        .join(" ");
+      return { messages: [{ role: "user", content: { type: "text", text } }] };
+    });
+  }
+
+  toolPrompt(
+    "openfileweb",
+    "Get a link to open a file directly in a browser",
+    { filepath: z.string().describe("Relative path to the file") },
+    "open_file_web",
+    "Share the resulting URL with me, noting it expires in 15 minutes."
+  );
+
+  toolPrompt(
+    "startup",
+    "Load Project FireStorm startup context for one or more projects",
+    {
+      project: z.string().describe("Master, Court, Mental, Media, or combined with ':' e.g. Court:Mental"),
+      load_level: z.string().optional().describe("low, med, high (default med). Aliases: light, normal, full"),
+    },
+    "startup_firestorm",
+    "Reply following the startup contract (normalized command, files loaded, active rules, in-scope folders, confirmation line)."
+  );
+
+  toolPrompt(
+    "list",
+    "List files and folders in a Master Hive folder",
+    { subpath: z.string().optional().describe("Relative folder, default root") },
+    "list_files"
+  );
+
+  toolPrompt("read", "Read a file's contents", { filepath: z.string().describe("Relative path to the file") }, "read_file");
+
+  toolPrompt(
+    "search",
+    "Search file contents for a substring",
+    {
+      query: z.string().describe("Text to search for"),
+      subpath: z.string().optional().describe("Relative folder to search, default root"),
+    },
+    "search_files"
+  );
+
+  toolPrompt(
+    "stat",
+    "Get size, modified time, and hash of a file",
+    { filepath: z.string().describe("Relative path to the file") },
+    "stat_file"
+  );
+
+  toolPrompt(
+    "move",
+    "Move or rename a file or folder",
+    { from: z.string().describe("Relative source path"), to: z.string().describe("Relative destination path") },
+    "move_file"
+  );
+
+  toolPrompt("mkdir", "Create a folder", { subpath: z.string().describe("Relative folder path to create") }, "mkdir");
+
+  toolPrompt(
+    "trash",
+    `Move a file or folder into "${TRASH_FOLDER}"`,
+    { filepath: z.string().describe(`Relative path to move into ${TRASH_FOLDER}`) },
+    "move_to_trash"
+  );
+
+  toolPrompt(
+    "sort",
+    `Preview where items in "${SORT_FOLDER}" would be sorted (read-only)`,
+    {},
+    "preview_sort_inbox",
+    "Do not call apply_sort_inbox until I confirm each destination."
+  );
+
+  toolPrompt(
+    "emptybin",
+    `Permanently delete everything currently in "${TRASH_FOLDER}"`,
+    {},
+    "empty_trash",
+    `First list what's in ${TRASH_FOLDER} and confirm with me exactly what will be permanently deleted before calling empty_trash - this cannot be undone.`
+  );
+
   return server;
 }
 

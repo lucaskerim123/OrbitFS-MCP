@@ -74,6 +74,7 @@ Read-only:
 - `readFile` - read one text file.
 - `getManifest` - get the full file manifest.
 - `downloadFile` - download a file through the Hive server.
+- `getFileWebLink` - get a link that opens a file directly in a browser tab (`/openfileweb <file>`).
 - `getOAuthState` - inspect registered OAuth clients and refresh-token accounts.
 
 Write/admin:

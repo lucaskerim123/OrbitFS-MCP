@@ -1,5 +1,5 @@
-$nodeRunning = Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like "*mcp-hive-server*server.js*" }
-if (-not $nodeRunning) {
+$hivePortListening = & 'C:\Windows\System32\netstat.exe' -ano | Select-String ":3939\s.*LISTENING"
+if (-not $hivePortListening) {
   Start-Process -FilePath "node" -ArgumentList "C:\mcp-hive-server\server.js" `
     -WorkingDirectory "C:\mcp-hive-server" `
     -RedirectStandardOutput "C:\mcp-hive-server\out.log" `

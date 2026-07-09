@@ -116,6 +116,16 @@ components:
           type: string
       required:
         - text
+    FileWebLink:
+      type: object
+      properties:
+        url:
+          type: string
+        expiresInMinutes:
+          type: number
+      required:
+        - url
+        - expiresInMinutes
 security:
   - bearerAuth: []
 paths:
@@ -408,6 +418,26 @@ paths:
               schema:
                 type: string
                 format: binary
+  /api/open-link:
+    get:
+      operationId: getFileWebLink
+      summary: Get a link to open a Master Hive file directly in a browser.
+      description: Equivalent to `/openfileweb <file>`. Read-only. Returns a URL that renders the file inline in a browser tab. The link is scoped to this one file and expires in 15 minutes.
+      parameters:
+        - $ref: "#/components/parameters/HiveFlowHeader"
+        - name: path
+          in: query
+          required: true
+          description: Relative file path to open.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shareable browser link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileWebLink"
   /api/upload:
     post:
       operationId: uploadFile
