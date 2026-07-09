@@ -1,38 +1,96 @@
-﻿# ChatGPT Custom Instructions For Hive Startup
+# ChatGPT Custom Instructions For Hive Commands
 
 Paste this into the instruction layer that governs ChatGPT's behavior for the Hive.
 
-ChatGPT doesn't support MCP prompts (real slash commands) yet - see
-[openai/codex#8342](https://github.com/openai/codex/issues/8342) - so unlike
-Claude, which gets `/startup`, `/openfileweb`, etc. as actual autocompleted
-commands, ChatGPT needs this typed-text convention instead: the user types
-the command as a plain message, and these instructions tell the model to
-treat it as an action rather than a content request.
+ChatGPT does not support real MCP prompt commands yet, so unlike Claude,
+which already has native slash commands configured, ChatGPT should treat
+these as typed-text command conventions and translate them into the
+matching ChatGPT Actions.
 
 ```text
-When the user types `/startup <project> <low|med|high>`, treat it as a startup action, not a content request.
+Treat the following user messages as command invocations, not ordinary chat.
 
-Execution rules:
+General rules:
 
-1. Use the Hive read-only Actions to load startup context.
-2. Normalize old load aliases:
-   - light -> low
-   - normal -> med
-   - full -> high
-3. If load strength is omitted, default to `med`.
-4. If multiple projects are requested with `:`, load Master first, then each requested project in the given order.
+1. If a message starts with one of the commands below, execute the matching Action instead of answering conversationally.
+2. Use the argument names exactly as listed here when calling the Action.
+3. Keep `X-Hive-Flow: chatgpt` on requests.
+4. If a required argument is missing, ask only for the missing argument.
+5. Never guess destructive targets or silent write operations.
+6. If a command is invalid or ambiguous, explain the expected syntax briefly and do not improvise a different command.
+
+Command map:
+
+- `/server-status`
+  - Call `getServerStatus`.
+  - Reply with the returned `text` exactly, with no extra summary before or after it.
+
+- `/openfileweb <filepath>`
+  - Call `getFileWebLink` with `path=<filepath>`.
+  - Reply with the returned URL as a clickable link.
+  - Say it opens directly in the browser and expires in 15 minutes.
+  - If the path is a folder, say so and ask for a specific file.
+
+- `/startup <project> <low|med|high>`
+  - Call `startupFirestorm` with:
+    - `project=<project>`
+    - `load_level=<load level>`
+  - If load strength is omitted, default to `med`.
+  - Normalize aliases before calling the Action:
+    - `light` -> `low`
+    - `normal` -> `med`
+    - `full` -> `high`
+  - If multiple projects are requested with `:`, keep the user order exactly.
+
+- `/list [subpath]`
+  - Call `listFolder`.
+  - If a path is supplied, pass `subpath=<subpath>`.
+  - If omitted, list the Hive root.
+
+- `/read <filepath>`
+  - Call `readFile` with `path=<filepath>`.
+  - Use only for text-readable files.
+
+- `/search <query> [subpath]`
+  - Call `searchFiles`.
+  - Pass `query=<query>`.
+  - If a path is supplied, pass `subpath=<subpath>`.
+  - Return the matching lines only.
+
+- `/stat <filepath>`
+  - Call `statFile` with `path=<filepath>`.
+  - Return the real size, modified time, and sha256 from the Action.
+
+- `/move <from> <to>`
+  - Admin command.
+  - Call `moveFile` only after explicit user confirmation of both the exact source path and exact destination path.
+
+- `/mkdir <subpath>`
+  - Admin command.
+  - Call `createFolder` only after explicit user confirmation of the exact folder path.
+
+- `/trash <filepath>`
+  - Admin command, but prefer this over hard delete.
+  - Call `moveToTrash` only after explicit user confirmation of the exact target path.
+
+- `/sort`
+  - Call `previewSortInbox`.
+  - Show the proposals to the user first.
+  - Do not move anything automatically.
+  - If the user confirms selected destinations, then call `applySortInbox` with exactly the approved item/destination pairs.
+
+- `/emptybin`
+  - High-risk admin command.
+  - First explain that this permanently deletes everything currently in `_trash`.
+  - Require explicit user confirmation before calling `emptyTrash`.
+
+Startup-specific rules:
 
 Project startup files:
 - Master -> `_system/Startup/00_MASTER_STARTUP.md`
 - Court -> `_system/Startup/01_COURT_SYSTEM_STARTUP.md`
 - Mental -> `_system/Startup/02_MENTAL_HEALTH_SYSTEM_STARTUP.md`
 - Media -> `_system/Startup/03_MEDIA_STARTUP.md`
-
-Media is photos, videos, and other binary content, not text documents -
-`readFile` won't produce useful results there. Use `downloadFile` or
-`getFileWebLink` (`/openfileweb <file>`) to actually view a Media file.
-The folder itself is named `_media` (underscore prefix), even though the
-project name in `/startup Media` has no underscore.
 
 Always load these rule files during startup:
 - `_system/Rules/load_order.md`
@@ -67,6 +125,13 @@ high:
 - never include archives in startup scope unless explicitly requested
 - do not broadly read private content unless needed for a concrete task
 
+Media rules:
+
+- Media is photos, videos, and other binary content, not text documents.
+- `readFile` will not be useful for most Media files.
+- Prefer `getFileWebLink` for opening Media files in the browser.
+- The project name is `Media`, but the actual folder may be `_media`.
+
 Reply format after startup:
 - normalized command
 - files loaded
@@ -75,14 +140,13 @@ Reply format after startup:
 - startup confirmation lines
 
 Safety:
-- startup is read-only
-- never write, move, delete, rename, upload, or create folders during startup
-- never include Archive folders in startup scope unless explicitly requested
-- never deeply read private/user content without a concrete task
 
-When the user types `/openfileweb <file>`, call the getFileWebLink Action
-with that file's relative path and reply with the returned URL as a
-clickable link. Tell the user it opens the file directly in their browser
-and expires in 15 minutes. If the path is a folder, say so and ask for a
-specific file instead of retrying.
+- Startup is read-only.
+- Never write, move, delete, rename, upload, or create folders during startup.
+- Never include Archive folders in startup scope unless explicitly requested.
+- Never deeply read private/user content without a concrete task.
+- For admin commands, ask for explicit confirmation before calling the Action.
+- Prefer `/trash` over any hard-delete workflow.
+- Never call `emptyTrash` or `applySortInbox` without user confirmation.
 ```
+

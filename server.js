@@ -1,10 +1,12 @@
-﻿import path from "path";
+import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), ".env") });
 import express from "express";
 import fs from "fs/promises";
 import crypto from "crypto";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -20,7 +22,7 @@ const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
 const SORT_FOLDER = "_sorter";
 const TRASH_FOLDER = "_trash";
-const LEGACY_TRASH_FOLDERS = ["🗑 Trash"];
+const LEGACY_TRASH_FOLDERS = ["?? Trash"];
 // TEMPORARILY EMPTY during the top-level folder redesign - delete/move/trash
 // protection for root folders is off. Restore the real list below once the
 // new structure is settled:
@@ -68,6 +70,12 @@ const FIRESTORM_LOAD_ALIASES = {
 };
 
 const ops = makeOps(ROOT);
+const execFileAsync = promisify(execFile);
+const MASTER_BRAIN_LOCAL_URL = `http://127.0.0.1:${process.env.PANEL_PORT || 4000}/`;
+const HIVE_LOCAL_PING_URL = `http://127.0.0.1:${PORT}/api/ping`;
+const MASTER_BRAIN_SERVICE_NAME = process.env.PANEL_SERVICE_NAME || "MasterBrainPanel";
+const HIVE_SERVICE_NAME = process.env.HIVE_SERVICE_NAME || "MasterHiveServer";
+const TUNNEL_SERVICE_NAME = process.env.TUNNEL_SERVICE_NAME || "MasterHiveTunnel";
 
 function logEvent(event, fields = {}) {
   const line = JSON.stringify({ ts: new Date().toISOString(), event, ...fields });
@@ -81,6 +89,149 @@ function logError(event, err, fields = {}) {
   fs.appendFile(ERROR_LOG_FILE, `${line}\n`).catch(() => {});
 }
 
+async function httpCheck(url) {
+  try {
+    const resp = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(5000) });
+    return { ok: resp.status >= 200 && resp.status < 400, status: resp.status, error: null };
+  } catch (err) {
+    return { ok: false, status: null, error: err.message };
+  }
+}
+
+async function getServiceStates() {
+  if (process.platform !== "win32") {
+    return {
+      panel: { exists: false, running: false, status: "Unsupported" },
+      hive: { exists: false, running: false, status: "Unsupported" },
+      tunnel: { exists: false, running: false, status: "Unsupported" },
+    };
+  }
+  const script = `
+$services = @("${MASTER_BRAIN_SERVICE_NAME}", "${HIVE_SERVICE_NAME}", "${TUNNEL_SERVICE_NAME}")
+$result = @{}
+foreach ($name in $services) {
+  $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
+  if ($svc) {
+    $result[$name] = @{ exists = $true; status = [string]$svc.Status; running = ($svc.Status -eq "Running") }
+  } else {
+    $result[$name] = @{ exists = $false; status = "NotInstalled"; running = $false }
+  }
+}
+$result | ConvertTo-Json -Compress
+`;
+  try {
+    const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
+      timeout: 15000,
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+    });
+    const parsed = JSON.parse(stdout.trim() || "{}");
+    return {
+      panel: parsed[MASTER_BRAIN_SERVICE_NAME] || { exists: false, running: false, status: "Unknown" },
+      hive: parsed[HIVE_SERVICE_NAME] || { exists: false, running: false, status: "Unknown" },
+      tunnel: parsed[TUNNEL_SERVICE_NAME] || { exists: false, running: false, status: "Unknown" },
+    };
+  } catch (err) {
+    return {
+      panel: { exists: false, running: false, status: `CheckFailed: ${err.message}` },
+      hive: { exists: false, running: false, status: `CheckFailed: ${err.message}` },
+      tunnel: { exists: false, running: false, status: `CheckFailed: ${err.message}` },
+    };
+  }
+}
+
+async function readLastErrorBrief(filepath) {
+  try {
+    const raw = await fs.readFile(filepath, "utf-8");
+    const lines = raw.split(/\r?\n/).filter(Boolean);
+    if (!lines.length) return null;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const parsed = JSON.parse(lines[i]);
+        return parsed.error || parsed.event || lines[i].slice(0, 200);
+      } catch {}
+    }
+    return lines[lines.length - 1].slice(0, 200);
+  } catch {
+    return null;
+  }
+}
+
+function classifyConnectionStatus(clients = [], refreshTokens = [], flow) {
+  const flowClients = clients.filter((client) => client.flow === flow).length;
+  const flowTokens = refreshTokens.filter((token) => token.flow === flow).length;
+  if (flowClients > 0 && flowTokens > 0) {
+    return `Connected (${flowClients} client${flowClients === 1 ? "" : "s"}, ${flowTokens} account${flowTokens === 1 ? "" : "s"})`;
+  }
+  if (flowClients > 0) {
+    return `Registered (${flowClients} client${flowClients === 1 ? "" : "s"}), no refresh-token account`;
+  }
+  return "Not connected";
+}
+
+async function buildServerStatusReport() {
+  const [services, panelLocal, hiveLocal, oauthState, hiveErrorBrief] = await Promise.all([
+    getServiceStates(),
+    httpCheck(MASTER_BRAIN_LOCAL_URL),
+    httpCheck(HIVE_LOCAL_PING_URL),
+    Promise.resolve(getOAuthState()),
+    readLastErrorBrief(ERROR_LOG_FILE),
+  ]);
+
+  const masterBrainLocal = panelLocal.ok ? "Yes" : "No";
+  const masterBrainOnline = services.tunnel.running && panelLocal.ok ? "Likely yes" : "No";
+  const masterBrainStatus = panelLocal.ok
+    ? (services.tunnel.running ? "Local panel reachable; tunnel service running." : "Local panel reachable; tunnel service not running.")
+    : (services.panel.running ? `Panel service running, but local HTTP check failed${panelLocal.error ? `: ${panelLocal.error}` : "."}` : `Panel service ${services.panel.status}.`);
+  const masterBrainErrors = panelLocal.ok && services.tunnel.running
+    ? "None detected from local checks."
+    : [!services.panel.running ? `Panel service ${services.panel.status}` : null, !services.tunnel.running ? `Tunnel service ${services.tunnel.status}` : null, panelLocal.error].filter(Boolean).join("; ") || "None detected from local checks.";
+
+  const hiveRunning = services.hive.running ? "Yes" : "No";
+  const hiveOnline = hiveLocal.ok && services.tunnel.running ? "Likely yes" : (hiveLocal.ok ? "Local only" : "No");
+  const hiveStatus = hiveLocal.ok
+    ? (services.tunnel.running ? "Local ping OK; tunnel service running." : "Local ping OK; tunnel service not running.")
+    : (services.hive.running ? `Hive service running, but local ping failed${hiveLocal.error ? `: ${hiveLocal.error}` : "."}` : `Hive service ${services.hive.status}.`);
+  const hiveErrors = hiveErrorBrief || [!services.hive.running ? `Hive service ${services.hive.status}` : null, hiveLocal.error].filter(Boolean).join("; ") || "None detected from recent Hive logs.";
+
+  const chatgptStatus = classifyConnectionStatus(oauthState.clients || [], oauthState.refreshTokens || [], "chatgpt");
+  const claudeStatus = classifyConnectionStatus(oauthState.clients || [], oauthState.refreshTokens || [], "claude");
+
+  const text = [
+    "The Master Brain",
+    `Connected locally: ${masterBrainLocal}`,
+    `Connected Online: ${masterBrainOnline}`,
+    `Connection status: ${masterBrainStatus}`,
+    `Errors (brief): ${masterBrainErrors}`,
+    "",
+    "The Hive Server",
+    `Running: ${hiveRunning}`,
+    `Online: ${hiveOnline}`,
+    `Status: ${hiveStatus}`,
+    `Errors (brief): ${hiveErrors}`,
+    "",
+    `Chatgpt Connection Status: ${chatgptStatus}`,
+    `Claude Connection Status: ${claudeStatus}`,
+  ].join("\n");
+
+  return {
+    text,
+    masterBrain: {
+      connectedLocally: masterBrainLocal,
+      connectedOnline: masterBrainOnline,
+      connectionStatus: masterBrainStatus,
+      errorsBrief: masterBrainErrors,
+    },
+    hiveServer: {
+      running: hiveRunning,
+      online: hiveOnline,
+      status: hiveStatus,
+      errorsBrief: hiveErrors,
+    },
+    chatgptConnectionStatus: chatgptStatus,
+    claudeConnectionStatus: claudeStatus,
+  };
+}
 function requestId() {
   return crypto.randomBytes(6).toString("hex");
 }
@@ -1005,6 +1156,30 @@ app.get("/api/file", async (req, res) => {
   }
 });
 
+app.get("/api/stat", async (req, res) => {
+  try {
+    const info = await ops.statFile(req.query.path);
+    logEvent("api.stat.ok", { ...requestContext(req), path: req.query.path });
+    res.json(info);
+  } catch (err) {
+    logError("api.stat.failed", err, { ...requestContext(req), path: req.query.path });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/api/search", async (req, res) => {
+  try {
+    const query = String(req.query.query || "");
+    if (!query) throw new Error("query is required");
+    const matches = await ops.searchFiles(query, req.query.subpath);
+    logEvent("api.search.ok", { ...requestContext(req), query, subpath: req.query.subpath || "", matchCount: matches.length });
+    res.json({ matches });
+  } catch (err) {
+    logError("api.search.failed", err, { ...requestContext(req), query: req.query.query, subpath: req.query.subpath || "" });
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.put("/api/file", async (req, res) => {
   try {
     await ops.writeFile(req.body.path, req.body.content ?? "");
@@ -1112,6 +1287,16 @@ app.post("/api/upload", express.raw({ type: () => true, limit: "2gb" }), async (
 
 // Read-only summary of connected MCP clients (Claude/ChatGPT DCR registrations
 // + which accounts hold a refresh token) - no secrets included.
+app.get("/api/server-status", async (req, res) => {
+  try {
+    const status = await buildServerStatusReport();
+    logEvent("api.server_status.ok", requestContext(req));
+    res.json(status);
+  } catch (err) {
+    logError("api.server_status.failed", err, requestContext(req));
+    res.status(500).json({ error: err.message });
+  }
+});
 app.get("/api/oauth-state", (req, res) => {
   logEvent("api.oauth_state.ok", requestContext(req));
   res.json(getOAuthState());
@@ -1221,4 +1406,7 @@ serverHandle = app.listen(PORT, async () => {
   }, TRASH_PURGE_INTERVAL_MS).unref();
   logEvent("server.start", { port: PORT, root: ROOT, publicBaseUrl: PUBLIC_BASE_URL });
 });
+
+
+
 
