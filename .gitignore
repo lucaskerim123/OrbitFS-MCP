@@ -25,3 +25,5 @@ out.log
 out.log
 oauth_state.json
 out.log
+err.log
+out.log

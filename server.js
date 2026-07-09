@@ -8,7 +8,7 @@ import crypto from "crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { jwtVerify } from "jose";
+import { jwtVerify, SignJWT } from "jose";
 import Anthropic from "@anthropic-ai/sdk";
 import { mountOAuth, getOAuthState } from "./oauth.js";
 import { makeOps } from "./hive-ops.js";
@@ -272,6 +272,35 @@ function assertMutablePath(relPath = "", action = "modify") {
     throw new Error(`Cannot ${action} protected root folder "${normalized}"`);
   }
   return normalized;
+}
+
+const FILE_VIEW_TOKEN_TTL = "15m";
+const FILE_VIEW_TOKEN_TTL_MINUTES = 15;
+
+// Short-lived, single-file-scoped tokens for "open this in a browser tab"
+// links - narrower than the HIVE_API_KEY bearer token (one path, expires
+// fast), so handing one out is safe even outside the normal auth header flow
+// browsers can't attach to a plain link click.
+async function signFileViewToken(relPath) {
+  return new SignJWT({ path: relPath, purpose: "file_view" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setIssuer(PUBLIC_BASE_URL)
+    .setExpirationTime(FILE_VIEW_TOKEN_TTL)
+    .sign(SECRET_KEY);
+}
+
+async function buildFileWebLink(filepath) {
+  const normalized = normalizeRelativePath(filepath);
+  if (!normalized) throw new Error("Path is required");
+  const full = ops.safeResolve(normalized);
+  const st = await fs.stat(full);
+  if (st.isDirectory()) {
+    throw new Error(`"${normalized}" is a folder, not a file. Point /openfileweb at a specific file.`);
+  }
+  const token = await signFileViewToken(normalized);
+  const url = `${PUBLIC_BASE_URL}/open?path=${encodeURIComponent(normalized)}&token=${token}`;
+  return { url, expiresInMinutes: FILE_VIEW_TOKEN_TTL_MINUTES };
 }
 
 function trashEntryPrefix() {
@@ -579,6 +608,22 @@ function buildServer(authContext = {}) {
       const info = await ops.statFile(filepath);
       logEvent("tool.stat_file.ok", { ...authContext, filepath });
       return { content: [{ type: "text", text: JSON.stringify(info, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "open_file_web",
+    "Get a link to open a Master Hive file directly in a web browser. Triggered by the user typing `/openfileweb <file>`. Returns a URL that renders the file inline (PDF, image, text, etc.) or lets the browser handle it; the link is single-file-scoped and expires in 15 minutes.",
+    { filepath: z.string().describe("Relative path to the file") },
+    async ({ filepath }) => {
+      logEvent("tool.open_file_web.start", { ...authContext, filepath });
+      const { url, expiresInMinutes } = await buildFileWebLink(filepath);
+      logEvent("tool.open_file_web.ok", { ...authContext, filepath });
+      return {
+        content: [
+          { type: "text", text: `Open in browser (expires in ${expiresInMinutes} minutes): ${url}` },
+        ],
+      };
     }
   );
 
@@ -923,6 +968,42 @@ app.get("/api/download", async (req, res) => {
   } catch (err) {
     logError("api.download.failed", err, { ...requestContext(req), path: req.query.path });
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Bearer-authed (covered by the app.use("/api", ...) guard above): hands
+// back a shareable link rather than the file itself, for the ChatGPT
+// Actions lane behind /openfileweb - see /open below for the link target.
+app.get("/api/open-link", async (req, res) => {
+  try {
+    const { url, expiresInMinutes } = await buildFileWebLink(req.query.path);
+    logEvent("api.open_link.ok", { ...requestContext(req), path: req.query.path });
+    res.json({ url, expiresInMinutes });
+  } catch (err) {
+    logError("api.open_link.failed", err, { ...requestContext(req), path: req.query.path });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Deliberately outside /api and the bearer-auth guard above: this is the
+// link target /openfileweb hands out, meant to be opened directly in a
+// browser tab, which can't attach an Authorization header. Auth instead
+// comes from the short-lived, single-file-scoped token in the URL itself.
+app.get("/open", async (req, res) => {
+  const relPath = req.query.path;
+  try {
+    const token = req.query.token;
+    if (!token) return res.status(401).send("Missing token. Ask for a fresh link with /openfileweb <file>.");
+    const { payload } = await jwtVerify(String(token), SECRET_KEY, { issuer: PUBLIC_BASE_URL });
+    if (payload.purpose !== "file_view" || payload.path !== relPath) {
+      throw new Error("Token does not match the requested file");
+    }
+    const full = ops.safeResolve(relPath);
+    logEvent("open.file.ok", { ...requestContext(req), path: relPath });
+    res.sendFile(full);
+  } catch (err) {
+    logError("open.file.failed", err, { ...requestContext(req), path: relPath });
+    res.status(401).send("This link is invalid or has expired. Ask for a fresh one with /openfileweb <file>.");
   }
 });
 
