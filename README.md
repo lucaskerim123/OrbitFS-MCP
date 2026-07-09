@@ -11,7 +11,7 @@ It exposes the FireStorm root at `HIVE_ROOT` over:
 
 - Shared FireStorm content at `C:\Project FireStorm\The Master Hive`
 - Protected system roots like `_system`, `0. Core Folder`, `_media`, and the other project roots
-- `🗑 Trash` as the soft-delete bin
+- `_trash` as the soft-delete bin
 - `/emptybin`-style permanent deletion for trash contents
 - `preview_sort_inbox` / `apply_sort_inbox` for `_sorter`
 
@@ -62,8 +62,8 @@ step. Full walkthrough: `the-master-brain/GETTING_STARTED.md`.
 - `GET /api/file?path=` - read a file
 - `PUT /api/file` - write a file
 - `DELETE /api/file?path=` - delete a file or folder, except protected roots
-- `POST /api/trash` - move a file or folder into `🗑 Trash`
-- `POST /api/trash/empty` - permanently empty `🗑 Trash`
+- `POST /api/trash` - move a file or folder into `_trash`
+- `POST /api/trash/empty` - permanently empty `_trash`
 - `GET /api/trash/config` / `POST /api/trash/config` - admin trash retention
 - `POST /api/move` - move/rename
 - `POST /api/mkdir` - create a folder
@@ -100,7 +100,7 @@ depends on the client:
 
 ## Notes
 
-- Deleting from the panel now moves items to `🗑 Trash` instead of hard deleting them.
+- Deleting from the panel now moves items to `_trash` instead of hard deleting them.
 - Protected root folders are intentionally non-deletable and non-trashable.
 - Trash is auto-purged after the configured retention window, default `4` days.
 - All tool calls, REST requests, and file changes are logged in `logs/`.

@@ -293,7 +293,7 @@ paths:
   /api/trash:
     post:
       operationId: moveToTrash
-      summary: Move a file or folder into 🗑 Trash.
+      summary: Move a file or folder into _trash.
       description: Admin action. Safer than deleteFile for normal user-facing deletes because it preserves the original relative path under a timestamped trash entry.
       parameters:
         - $ref: "#/components/parameters/HiveFlowHeader"
@@ -306,7 +306,7 @@ paths:
               properties:
                 path:
                   type: string
-                  description: Relative file or folder path to move into 🗑 Trash.
+                  description: Relative file or folder path to move into _trash.
               required:
                 - path
       responses:
@@ -319,7 +319,7 @@ paths:
   /api/trash/empty:
     post:
       operationId: emptyTrash
-      summary: Permanently delete everything currently inside 🗑 Trash.
+      summary: Permanently delete everything currently inside _trash.
       description: High-risk admin action. Require explicit user confirmation before use.
       parameters:
         - $ref: "#/components/parameters/HiveFlowHeader"
@@ -333,7 +333,7 @@ paths:
   /api/trash/config:
     get:
       operationId: getTrashConfig
-      summary: Get the current 🗑 Trash auto-purge retention.
+      summary: Get the current _trash auto-purge retention.
       parameters:
         - $ref: "#/components/parameters/HiveFlowHeader"
       responses:
@@ -345,7 +345,7 @@ paths:
                 $ref: "#/components/schemas/TrashConfigResponse"
     post:
       operationId: setTrashConfig
-      summary: Update the 🗑 Trash auto-purge retention.
+      summary: Update the _trash auto-purge retention.
       description: Admin action. Require explicit user confirmation before use.
       parameters:
         - $ref: "#/components/parameters/HiveFlowHeader"

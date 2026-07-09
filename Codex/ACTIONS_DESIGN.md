@@ -81,8 +81,8 @@ Write/admin:
 
 - `writeFile` - create or overwrite a text file.
 - `deleteFile` - delete a file or folder.
-- `moveToTrash` - move a file or folder into `🗑 Trash` as a soft delete.
-- `emptyTrash` - permanently delete everything in `🗑 Trash`.
+- `moveToTrash` - move a file or folder into `_trash` as a soft delete.
+- `emptyTrash` - permanently delete everything in `_trash`.
 - `moveFile` - move or rename a file or folder.
 - `createFolder` - create a folder.
 - `uploadFile` - upload raw file bytes.
@@ -168,7 +168,7 @@ to read-only Action calls that load the real Hive startup files from `_system/St
 
 Trash/deletion commands are separate:
 
-- moving a file to `🗑 Trash` is a soft delete
-- `/emptybin` permanently deletes everything currently in `🗑 Trash`
-- anything left in `🗑 Trash` is auto-purged after 4 days by default
+- moving a file to `_trash` is a soft delete
+- `/emptybin` permanently deletes everything currently in `_trash`
+- anything left in `_trash` is auto-purged after 4 days by default
 - admins can change the auto-purge retention from Master Brain

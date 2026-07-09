@@ -19,12 +19,12 @@ const PORT = process.env.PORT || 3939;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
 const SORT_FOLDER = "_sorter";
-const TRASH_FOLDER = "🗑 Trash";
-const LEGACY_TRASH_FOLDERS = ["_trash"];
+const TRASH_FOLDER = "_trash";
+const LEGACY_TRASH_FOLDERS = ["🗑 Trash"];
 // TEMPORARILY EMPTY during the top-level folder redesign - delete/move/trash
 // protection for root folders is off. Restore the real list below once the
 // new structure is settled:
-//   "_system", "_sorter", "🗑 Trash", "0. Core", "1. Legal",
+//   "_system", "_sorter", "_trash", "0. Core", "1. Legal",
 //   "2. Wellbeing", "_media"
 const PROTECTED_ROOT_FOLDERS = new Set([]);
 const SORT_MODEL = process.env.SORT_MODEL || "claude-haiku-4-5-20251001";
