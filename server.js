@@ -708,7 +708,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "write_file",
-    "Create or overwrite a file in the Master Hive store",
+    "Create or overwrite a plain text file in the Master Hive store. Do NOT use this for images, PDFs, audio, video, or any other binary file - it writes content as UTF-8 text and will corrupt binary data. Use upload_file for anything that isn't plain text.",
     {
       filepath: z.string().describe("Relative path to the file"),
       content: z.string().describe("Full text content to write"),
@@ -718,6 +718,30 @@ function buildServer(authContext = {}) {
       await ops.writeFile(filepath, content);
       logEvent("file.change.write", { ...authContext, source: "mcp_tool", filepath, chars: content.length });
       return { content: [{ type: "text", text: `Wrote ${content.length} chars to ${filepath}` }] };
+    }
+  );
+
+  server.tool(
+    "upload_file",
+    "Upload a binary file (image, PDF, audio, video, etc.) to the Master Hive store. Use this instead of write_file for anything that isn't plain text - write_file writes its content as UTF-8 text, which corrupts binary data. Content must be base64-encoded.",
+    {
+      filepath: z.string().describe("Relative path to write the file"),
+      contentBase64: z.string().describe("File content, base64-encoded"),
+    },
+    async ({ filepath, contentBase64 }) => {
+      let buffer;
+      try {
+        buffer = Buffer.from(contentBase64, "base64");
+      } catch {
+        throw new Error("contentBase64 is not valid base64");
+      }
+      if (buffer.length > FETCH_MAX_BYTES) {
+        throw new Error(`File too large (${buffer.length} bytes, over the ${FETCH_MAX_BYTES}-byte limit for MCP uploads) - use the web panel's upload button for larger files`);
+      }
+      logEvent("tool.upload_file.start", { ...authContext, filepath, bytes: buffer.length });
+      await ops.writeFile(filepath, buffer);
+      logEvent("file.change.upload", { ...authContext, source: "mcp_tool", filepath, bytes: buffer.length });
+      return { content: [{ type: "text", text: `Uploaded ${buffer.length} bytes to ${filepath}` }] };
     }
   );
 
