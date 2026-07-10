@@ -1,0 +1,11 @@
+{
+  "name": "hive-addon-sorter",
+  "version": "1.0.0",
+  "description": "Master Hive Addon Sorter with live folder indexing and confirm-before-move safety.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check sorter-core.js"
+  }
+}

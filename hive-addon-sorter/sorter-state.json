@@ -1,0 +1,17 @@
+{
+  "status": "confirmed",
+  "safeMode": true,
+  "items": [],
+  "lastRun": "2026-07-10T17:01:56.055Z",
+  "result": {
+    "status": "confirmed",
+    "confirmedAt": "2026-07-10T17:02:12.355Z",
+    "moved": [
+      {
+        "source": "_sorter/pops_funeral_raw_entry_2026-07-04.txt",
+        "destination": "2. Wellbeing/Notes/pops_funeral_raw_entry_2026-07-04.txt"
+      }
+    ],
+    "skipped": []
+  }
+}

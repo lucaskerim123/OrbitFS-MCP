@@ -1,0 +1,9 @@
+{
+  "port": 4055,
+  "hiveRoot": "F:/Project Firestorm/The Master Hive",
+  "indexPath": "_system/Index/folder_index.json",
+  "sorterFolder": "_sorter",
+  "trashFolder": "_trash",
+  "safeModeDefault": true,
+  "dangerousModeDefault": false
+}

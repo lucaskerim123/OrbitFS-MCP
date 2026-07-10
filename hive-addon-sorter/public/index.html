@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hive Sorter — Master Brain</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235b8cff'/%3E%3Ctext x='32' y='43' font-size='30' font-family='sans-serif' text-anchor='middle' fill='white'%3E%F0%9F%A7%B9%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <span class="brand-mark">🧹</span>
+        <div>
+          <h1>Hive Sorter</h1>
+          <p>Preview, edit, and confirm before anything moves</p>
+        </div>
+      </div>
+      <a class="back-link" href="https://brain.incendiarynetworks.cc/">← Back to Master Brain</a>
+    </header>
+
+    <main>
+      <div class="status-card">
+        <div class="status-left">
+          <span id="status-dot" class="status-dot idle"></span>
+          <div class="status-text">
+            <strong id="status-main">Loading…</strong>
+            <span id="status-sub"></span>
+          </div>
+        </div>
+        <span class="safe-pill">Safe mode — nothing moves until confirmed</span>
+      </div>
+
+      <div class="cmd-row">
+        <button id="startBtn" class="cmd-btn primary">🔍 Scan inbox</button>
+        <button id="stopBtn" class="cmd-btn">⏹ Stop</button>
+        <button id="confirmBtn" class="cmd-btn danger">✅ Confirm &amp; move</button>
+      </div>
+
+      <div id="bulk-row" class="bulk-row hidden">
+        <span id="bulk-count" class="count"></span>
+        <div class="bulk-actions">
+          <button id="approve-all-btn">Approve all</button>
+          <button id="clear-all-btn">Clear all</button>
+        </div>
+      </div>
+
+      <div id="items" class="items"></div>
+
+      <p class="footnote">Classification is local rule-matching against the live folder tree — no AI key required.</p>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
