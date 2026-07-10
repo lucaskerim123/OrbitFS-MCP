@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { exec } from 'node:child_process';
 import { startSorter, confirmSorter, buildFolderIndex, HIVE_ROOT } from './sorter-core.js';
 
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -104,6 +105,25 @@ async function api(req, res) {
 }
 
 await loadState();
+
+async function findFreePort(startPort) {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer();
+    server.listen(startPort, () => {
+      server.close(() => resolve(startPort));
+    });
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        findFreePort(startPort + 1).then(resolve).catch(reject);
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
+
+const ACTUAL_PORT = await findFreePort(PORT);
+
 http.createServer(async (req, res) => {
   try {
     if (req.url.startsWith('/api/')) {
@@ -114,7 +134,29 @@ http.createServer(async (req, res) => {
   } catch (err) {
     return send(res, 500, { error: err.message });
   }
-}).listen(PORT, () => {
-  console.log(`Hive sorter panel running on http://localhost:${PORT}`);
+}).listen(ACTUAL_PORT, async () => {
+  console.log(`Hive sorter panel running on http://localhost:${ACTUAL_PORT}`);
+  await fs.writeFile(path.join(APP_DIR, '.sorter-port'), String(ACTUAL_PORT), 'utf8').catch(() => {});
+
+  // Update cloudflared config and restart
+  const cloudflaredConfig = `tunnel: 77da9376-aa43-4d46-a12c-5b4e40b461ec
+credentials-file: C:\\Users\\Lucas\\.cloudflared\\77da9376-aa43-4d46-a12c-5b4e40b461ec.json
+
+ingress:
+  - hostname: sorter.incendiarynetworks.cc
+    service: http://localhost:${ACTUAL_PORT}
+  - hostname: hive.incendiarynetworks.cc
+    service: http://localhost:3939
+  - service: http_status:404
+`;
+  const existing = await fs.readFile('C:\\Users\\Lucas\\.cloudflared\\config.yml', 'utf8').catch(() => '');
+  if (existing !== cloudflaredConfig) {
+    await fs.writeFile('C:\\Users\\Lucas\\.cloudflared\\config.yml', cloudflaredConfig, 'utf8').catch(e => console.warn('Failed to update cloudflared config:', e.message));
+    // exec returns a ChildProcess (not a promise) - errors arrive via the callback
+    exec('taskkill /F /IM cloudflared.exe & timeout /t 2 & start "" cloudflared tunnel run master-hive', { windowsHide: true }, (err) => {
+      if (err) console.warn('cloudflared restart failed:', err.message);
+    });
+  }
+
   console.log('Commands: /startsorter /stopsorter /confirmsorter');
 });

@@ -55,6 +55,12 @@ export function makeOps(root) {
     await fs.writeFile(full, content, "utf-8");
   }
 
+  async function appendFile(filepath, content) {
+    const full = safeResolve(filepath);
+    await fs.mkdir(path.dirname(full), { recursive: true });
+    await fs.appendFile(full, content);
+  }
+
   async function deleteFile(filepath) {
     const full = safeResolve(filepath);
     const st = await fs.stat(full);
@@ -140,6 +146,7 @@ export function makeOps(root) {
     listFiles,
     readFile,
     writeFile,
+    appendFile,
     deleteFile,
     moveFile,
     makeDir,

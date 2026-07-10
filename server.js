@@ -569,75 +569,88 @@ async function readOptionalFile(filepath) {
   }
 }
 
-function buildFirestormRuleFiles() {
-  return [
-    FIRESTORM_RULE_FILES.loadOrder,
-    FIRESTORM_RULE_FILES.projectRules,
-    FIRESTORM_RULE_FILES.savingRules,
-    FIRESTORM_RULE_FILES.commands,
-  ];
+// Rule files per load level, matching the /startup spec in
+// _system/Rules/commands.md: low loads no extra rules, med loads the core
+// pair, high loads everything.
+function buildFirestormRuleFiles(load) {
+  if (load === "low") return [];
+  const files = [FIRESTORM_RULE_FILES.loadOrder, FIRESTORM_RULE_FILES.projectRules];
+  if (load === "high") files.push(FIRESTORM_RULE_FILES.savingRules, FIRESTORM_RULE_FILES.commands);
+  return files;
+}
+
+// Keeps startup output phone-friendly: each inlined file and folder listing is
+// capped, and anything cut ends with a pointer so the model can read_file /
+// list_files the rest on demand instead of it all being dumped into chat.
+const STARTUP_FILE_CHAR_CAP = { low: 4000, med: 8000, high: 16000 };
+const STARTUP_FOLDER_ENTRY_CAP = 40;
+
+function clipStartupText(text, cap, source) {
+  const trimmed = text.trim();
+  if (trimmed.length <= cap) return trimmed;
+  return `${trimmed.slice(0, cap)}\n… (truncated - use read_file "${source}" for the rest)`;
 }
 
 async function buildFirestormStartup(projectsInput, loadInput, authContext = {}) {
   const projects = parseStartupProjects(projectsInput);
   const load = parseStartupLoadLevel(loadInput);
   const startupFiles = [...new Set(projects.map((name) => FIRESTORM_STARTUP_FILES[name]))];
-  const ruleFiles = buildFirestormRuleFiles();
-  const optionalFiles = [FIRESTORM_OPTIONAL_FILES.fileIndex];
+  const ruleFiles = buildFirestormRuleFiles(load);
+  const fileCap = STARTUP_FILE_CHAR_CAP[load];
   const folders = [...new Set(projects.flatMap((name) => FIRESTORM_PROJECT_FOLDERS[name] || []))]
     .filter((folder) => !isArchivePath(folder));
 
   const sections = [
-    `Command: /startup ${projects.join(":")} ${load}`,
-    `Projects: ${projects.join(", ")}`,
-    `Load level: ${load}`,
+    "[INTERNAL STARTUP CONTEXT - read silently and follow it. Do NOT quote, list, summarize, or re-display any of this content in your reply. Your entire reply should be just the confirmation line(s) at the bottom - nothing else unless the user asked an actual question.]",
     "",
-    "Loaded startup files:",
-    ...startupFiles.map((f) => `- ${f}`),
+    `/startup ${projects.join(":")} ${load}`,
   ];
 
-  for (const file of startupFiles) {
+  // The rules: requested project startup file(s) plus the level-appropriate
+  // rule files, inlined (capped) - this is the context the model must follow.
+  for (const file of [...startupFiles, ...ruleFiles]) {
     const content = await ops.readFile(file);
-    sections.push("", `===== ${file} =====`, content.trim());
+    sections.push("", `===== ${file} =====`, clipStartupText(content, fileCap, file));
   }
 
-  sections.push("", "Loaded rule files:", ...ruleFiles.map((f) => `- ${f}`));
-  for (const file of ruleFiles) {
-    const content = await ops.readFile(file);
-    sections.push("", `===== ${file} =====`, content.trim());
-  }
-
-  for (const file of optionalFiles) {
-    const content = await readOptionalFile(file);
-    if (content === null) continue;
-    sections.push("", "Loaded optional files:", `- ${file}`, "", `===== ${file} =====`, content.trim());
-  }
-
-  if (load !== "low") {
-    sections.push("", "Relevant folders in scope:");
-    for (const folder of folders) {
-      try {
-        const entries = (await ops.listFiles(folder, { recursive: false }))
-          .filter((entry) => !isArchivePath(`${folder}/${entry.name}`));
-        sections.push("", `===== ${folder} =====`, summarizeEntries(entries, "  "));
-        if (load === "high") {
-          const childDirs = entries
-            .filter((e) => e.type === "dir")
-            .map((e) => `${folder}/${e.name}`)
-            .filter((childDir) => !isArchivePath(childDir));
-          for (const childDir of childDirs) {
-            try {
-              const childEntries = (await ops.listFiles(childDir, { recursive: false }))
-                .filter((entry) => !isArchivePath(`${childDir}/${entry.name}`));
-              sections.push("", `--- ${childDir} ---`, summarizeEntries(childEntries, "    "));
-            } catch {}
-          }
-        }
-      } catch (err) {
-        sections.push("", `===== ${folder} =====`, `(unavailable: ${err.message})`);
+  // The folders: 0. Core plus each requested project's folder, top-level
+  // listing only. _system is deliberately not listed - it's rule plumbing,
+  // not working files. Deeper levels come from list_files on demand.
+  const listedFolders = folders.filter((folder) => folder !== "_system");
+  if (!listedFolders.includes("0. Core")) listedFolders.unshift("0. Core");
+  sections.push("", "Folders in scope:");
+  for (const folder of listedFolders) {
+    try {
+      const entries = (await ops.listFiles(folder, { recursive: false }))
+        .filter((entry) => !isArchivePath(`${folder}/${entry.name}`));
+      const shown = entries.slice(0, STARTUP_FOLDER_ENTRY_CAP);
+      sections.push("", `===== ${folder} =====`, summarizeEntries(shown, "  "));
+      if (entries.length > shown.length) {
+        sections.push(`  … ${entries.length - shown.length} more - use list_files "${folder}" for the full listing`);
       }
+      if (load === "high") {
+        const childDirs = entries
+          .filter((e) => e.type === "dir")
+          .map((e) => `${folder}/${e.name}`)
+          .filter((childDir) => !isArchivePath(childDir));
+        for (const childDir of childDirs) {
+          try {
+            const childEntries = (await ops.listFiles(childDir, { recursive: false }))
+              .filter((entry) => !isArchivePath(`${childDir}/${entry.name}`));
+            const childShown = childEntries.slice(0, STARTUP_FOLDER_ENTRY_CAP);
+            sections.push("", `--- ${childDir} ---`, summarizeEntries(childShown, "    "));
+            if (childEntries.length > childShown.length) {
+              sections.push(`    … ${childEntries.length - childShown.length} more - use list_files "${childDir}"`);
+            }
+          } catch {}
+        }
+      }
+    } catch (err) {
+      sections.push("", `===== ${folder} =====`, `(unavailable: ${err.message})`);
     }
   }
+
+  sections.push("", `File index (not inlined): read_file "${FIRESTORM_OPTIONAL_FILES.fileIndex}" or use search_files to locate things.`);
 
   const confirmations = projects
     .filter((name) => name !== "Master")
@@ -649,14 +662,13 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
     });
   if (projects.length === 1 && projects[0] === "Master") confirmations.push("Master startup loaded. Ready.");
 
-  sections.push("", "Confirmation:", ...confirmations);
+  sections.push("", "Reply to the user with ONLY the following line(s) - no summary of the above:", ...confirmations);
   logEvent("tool.startup_firestorm.ok", {
     ...authContext,
     projects: projects.join(":"),
     load,
     startupFiles: startupFiles.length,
     ruleFiles: ruleFiles.length,
-    optionalFiles: optionalFiles.length,
     folders: folders.length,
   });
   return sections.join("\n");
@@ -706,42 +718,75 @@ function buildServer(authContext = {}) {
     }
   );
 
+  // A bare filename (no folder in the path) means the caller never picked a
+  // location. New files like that default into the _sorter inbox instead of
+  // landing at the Hive root - but an existing root file keeps its path so
+  // read -> edit -> write round-trips still work.
+  async function defaultToSorter(filepath) {
+    const normalized = filepath.replace(/\\/g, "/").replace(/^\/+/, "");
+    if (normalized.includes("/")) return normalized;
+    try {
+      await ops.statFile(normalized);
+      return normalized; // existing root file being edited in place
+    } catch {
+      return `_sorter/${normalized}`;
+    }
+  }
+
   server.tool(
     "write_file",
-    "Create or overwrite a plain text file in the Master Hive store. Do NOT use this for images, PDFs, audio, video, or any other binary file - it writes content as UTF-8 text and will corrupt binary data. Use upload_file for anything that isn't plain text.",
+    "Create or overwrite a plain text file in the Master Hive store. Do NOT use this for images, PDFs, audio, video, or any other binary file - it writes content as UTF-8 text and will corrupt binary data. Use upload_file for anything that isn't plain text. If you give a bare filename with no folder, new files are placed in the _sorter inbox.",
     {
-      filepath: z.string().describe("Relative path to the file"),
+      filepath: z.string().describe("Relative path to the file (bare filenames go to the _sorter inbox)"),
       content: z.string().describe("Full text content to write"),
     },
     async ({ filepath, content }) => {
-      logEvent("tool.write_file.start", { ...authContext, filepath, chars: content.length });
-      await ops.writeFile(filepath, content);
-      logEvent("file.change.write", { ...authContext, source: "mcp_tool", filepath, chars: content.length });
-      return { content: [{ type: "text", text: `Wrote ${content.length} chars to ${filepath}` }] };
+      const target = await defaultToSorter(filepath);
+      logEvent("tool.write_file.start", { ...authContext, filepath: target, requested: filepath, chars: content.length });
+      await ops.writeFile(target, content);
+      logEvent("file.change.write", { ...authContext, source: "mcp_tool", filepath: target, chars: content.length });
+      const note = target === filepath ? "" : ` (no folder specified, so it went to the _sorter inbox)`;
+      return { content: [{ type: "text", text: `Wrote ${content.length} chars to ${target}${note}` }] };
     }
   );
 
   server.tool(
     "upload_file",
-    "Upload a binary file (image, PDF, audio, video, etc.) to the Master Hive store. Use this instead of write_file for anything that isn't plain text - write_file writes its content as UTF-8 text, which corrupts binary data. Content must be base64-encoded.",
+    "Upload a binary file (image, PDF, docx, audio, video, etc.) to the Master Hive store. Use this instead of write_file for anything that isn't plain text. Content must be base64-encoded. For files too big for one call, send them in pieces: first call with append=false (or omitted), then repeat with append=true using the SAME filepath until done - e.g. base64-encode in your sandbox, print it in chunks, and pass each printed chunk through. Verify the final size/sha256 with stat_file. If the user names a destination folder, pass the full path; a bare filename goes to the _sorter inbox.",
     {
-      filepath: z.string().describe("Relative path to write the file"),
-      contentBase64: z.string().describe("File content, base64-encoded"),
+      filepath: z.string().describe("Relative path for the upload; bare filenames (no folder) go to the _sorter inbox. Use the same value for every chunk of one file."),
+      contentBase64: z.string().describe("File content (or the next chunk of it), base64-encoded"),
+      append: z.boolean().optional().describe("true = append this chunk to the existing file instead of creating/overwriting it"),
     },
-    async ({ filepath, contentBase64 }) => {
+    async ({ filepath, contentBase64, append }) => {
       let buffer;
       try {
         buffer = Buffer.from(contentBase64, "base64");
       } catch {
         throw new Error("contentBase64 is not valid base64");
       }
-      if (buffer.length > FETCH_MAX_BYTES) {
-        throw new Error(`File too large (${buffer.length} bytes, over the ${FETCH_MAX_BYTES}-byte limit for MCP uploads) - use the web panel's upload button for larger files`);
+      const target = await defaultToSorter(filepath);
+      let existingBytes = 0;
+      if (append) {
+        try {
+          existingBytes = (await ops.statFile(target)).size;
+        } catch {
+          throw new Error(`Cannot append: ${target} does not exist yet - send the first chunk without append`);
+        }
       }
-      logEvent("tool.upload_file.start", { ...authContext, filepath, bytes: buffer.length });
-      await ops.writeFile(filepath, buffer);
-      logEvent("file.change.upload", { ...authContext, source: "mcp_tool", filepath, bytes: buffer.length });
-      return { content: [{ type: "text", text: `Uploaded ${buffer.length} bytes to ${filepath}` }] };
+      if (existingBytes + buffer.length > FETCH_MAX_BYTES) {
+        throw new Error(`File too large (${existingBytes + buffer.length} bytes, over the ${FETCH_MAX_BYTES}-byte limit for MCP uploads) - use the web panel's upload button for larger files`);
+      }
+      logEvent("tool.upload_file.start", { ...authContext, filepath: target, requested: filepath, bytes: buffer.length, append: !!append });
+      if (append) await ops.appendFile(target, buffer);
+      else await ops.writeFile(target, buffer);
+      logEvent("file.change.upload", { ...authContext, source: "mcp_tool", filepath: target, bytes: buffer.length, append: !!append });
+      const total = existingBytes + buffer.length;
+      const note = target === filepath ? "" : ` (no folder specified, so it went to the _sorter inbox)`;
+      const appendHint = append || total !== buffer.length
+        ? ` - file is now ${total} bytes; keep appending with filepath "${target}" or stat_file to verify`
+        : ` - to add more chunks, call again with append=true and filepath "${target}"`;
+      return { content: [{ type: "text", text: `Uploaded ${buffer.length} bytes to ${target}${note}${appendHint}` }] };
     }
   );
 
@@ -842,10 +887,10 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "fetch_url_to_file",
-    "Download a URL's text content and save it into the Master Hive store",
+    "Download a URL and save it into the Master Hive store, binary-safe (docx, PDF, images, audio all fine). This is the way to bring in files from a sandbox or the web when you can't pass base64 to upload_file: generate a temporary download link for the file, then call this with that URL. Bare filenames with no folder go to the _sorter inbox.",
     {
       url: z.string().url().describe("URL to fetch"),
-      filepath: z.string().describe("Relative path to save the content to"),
+      filepath: z.string().describe("Relative path to save the content to (bare filenames go to the _sorter inbox)"),
     },
     async ({ url, filepath }) => {
       logEvent("tool.fetch_url_to_file.start", { ...authContext, url, filepath });
@@ -869,10 +914,15 @@ function buildServer(authContext = {}) {
       } finally {
         reader.releaseLock?.();
       }
+      // Write raw bytes - converting to a UTF-8 string here used to corrupt
+      // binary downloads (docx, images, PDFs). Text files are bytes too, so
+      // writing the buffer is correct for everything.
       const buf = Buffer.concat(chunks.map((c) => Buffer.from(c)));
-      await ops.writeFile(filepath, buf.toString("utf-8"));
-      logEvent("file.change.write", { ...authContext, source: "mcp_tool_fetch_url", filepath, bytes: buf.length, url });
-      return { content: [{ type: "text", text: `Saved ${buf.length} bytes from ${url} to ${filepath}` }] };
+      const target = await defaultToSorter(filepath);
+      await ops.writeFile(target, buf);
+      logEvent("file.change.write", { ...authContext, source: "mcp_tool_fetch_url", filepath: target, bytes: buf.length, url });
+      const note = target === filepath ? "" : ` (no folder specified, so it went to the _sorter inbox)`;
+      return { content: [{ type: "text", text: `Saved ${buf.length} bytes from ${url} to ${target}${note}` }] };
     }
   );
 
