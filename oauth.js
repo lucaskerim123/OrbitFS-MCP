@@ -157,7 +157,9 @@ export function mountOAuth(app, cfg) {
       logEvent("oauth.authorize.rejected", {
         clientId: client_id || null,
         flow,
-        redirectHost: redirectHost(redirect_uri),
+        redirectUri: redirect_uri || null,
+        reason: !client ? "unknown_client" : "redirect_uri_mismatch",
+        registeredRedirectUris: client ? client.redirectUris : null,
         knownClients: clients.size,
       });
       return res.status(400).send("Unknown client or redirect_uri");
