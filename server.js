@@ -662,8 +662,20 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
   return sections.join("\n");
 }
 
+// Same brand icon as the web panel's favicon (public/index.html), so
+// whichever client shows this - Claude/ChatGPT's connector list, the
+// panel's login screen - looks like the same product.
+const SERVER_ICON_SVG =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235b8cff'/%3E%3Ctext x='32' y='43' font-size='30' font-family='sans-serif' text-anchor='middle' fill='white'%3E%F0%9F%A7%A0%3C/text%3E%3C/svg%3E";
+
 function buildServer(authContext = {}) {
-  const server = new McpServer({ name: "master-hive", version: "1.0.0" });
+  const server = new McpServer({
+    name: "master-hive",
+    title: "Master Hive",
+    version: "1.0.0",
+    description: "Shared file store and server control - list, read, write, move, sort, and trash files, plus MCP prompts for startup context and quick actions.",
+    icons: [{ src: SERVER_ICON_SVG, mimeType: "image/svg+xml" }],
+  });
 
   server.tool(
     "list_files",
