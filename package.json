@@ -17,7 +17,8 @@
         "express": "^5.2.1",
         "jose": "^6.2.3",
         "zod": "^4.4.3",
-        "archiver": "^7.0.1"
+        "archiver": "^7.0.1",
+        "mammoth": "^1.11.0"
     },
     "type": "module"
 }
