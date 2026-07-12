@@ -62,6 +62,9 @@ for this repo, and runs `npm install` in one step. Full walkthrough:
 - `GET /api/ping` - liveness
 - `GET /api/manifest` - file manifest for sync and audit
 - `GET /api/files?subpath=` - list a folder
+- `GET /api/files/recursive?path=` - recursively list a folder tree
+- `POST /api/files/read-batch` - batch-read individual text files
+- `GET /api/export-folder-link?path=` - create a 15-minute folder ZIP link
 - `GET /api/file?path=` - read a file
 - `PUT /api/file` - write a file
 - `DELETE /api/file?path=` - delete a file or folder, except protected roots
@@ -71,10 +74,19 @@ for this repo, and runs `npm install` in one step. Full walkthrough:
 - `POST /api/move` - move/rename
 - `POST /api/mkdir` - create a folder
 - `GET /api/download?path=` - download raw bytes
+- `GET /download-temp?path=&token=` - token-scoped temporary file download or folder ZIP
 - `GET /api/open-link?path=` - get a link that opens a file directly in a browser tab (`/openfileweb <file>`, 15-minute expiry)
 - `POST /api/upload?path=` - upload raw bytes
 - `GET /api/oauth-state` - connected MCP clients and refresh-token accounts
 - `POST /api/sort/preview` / `POST /api/sort/apply` - two-step sort workflow
+
+## MCP folder/context tools
+
+- `read_folder_recursive` - recursively list a folder tree
+- `read_file` - read one text file
+- `read_files_batch` - read up to 50 text files per call with bounded output
+- `export_folder` - return a temporary ZIP download link for a folder
+- `create_temporary_download_link` - return a temporary link for a file or folder
 
 ## Slash commands (MCP prompts)
 
