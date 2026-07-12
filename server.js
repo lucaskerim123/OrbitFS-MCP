@@ -7,7 +7,7 @@ import { z } from "zod";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.HIVE_ROOT;
-const WIDGET_URI = "ui://widget/orbitfs-hive-v4.html";
+const WIDGET_URI = "ui://widget/orbitfs-hive-v5.html";
 const WIDGET_HTML = await fs.readFile(path.join(SERVER_DIR, "app/widget/index.html"), "utf8");
 const CONFIG_PATH = path.join(ROOT, "_system", "Config", "startup-loading.json");
 const originalTool = McpServer.prototype.tool;
@@ -16,6 +16,29 @@ const extraToolsRegistered = new WeakSet();
 const DEFAULT_PUBLIC_ORIGIN = "https://mcp.incendiarynetworks.cc";
 const activeContext = new Map();
 let capturedLoadFileHandler = null;
+const HIVE_SCREENS = ["startup", "browser", "viewer", "context", "settings", "permissions", "search", "move", "upload"];
+const HIVE_MODALS = ["permissions", "move", "info", "upload", "delete"];
+const hiveUiState = {
+  currentScreen: "startup",
+  history: [],
+  selectedFiles: [],
+  filters: {},
+  scrollPosition: {},
+  permissions: {},
+  modal: null,
+  open: false,
+  focused: false,
+  revision: 0,
+};
+
+function hiveUiSnapshot(extra = {}) {
+  return {
+    mode: "ui_controller",
+    ui: { ...hiveUiState, history: [...hiveUiState.history], selectedFiles: [...hiveUiState.selectedFiles] },
+    context: contextStructured(),
+    ...extra,
+  };
+}
 
 const DEFAULT_CONFIG = {
   defaultProject: "Mental",
@@ -169,6 +192,50 @@ function registerExtraTools(server) {
   if (extraToolsRegistered.has(server)) return;
   extraToolsRegistered.add(server);
   const uiMeta = { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI };
+
+  server.registerTool("hive_ui", {
+    title: "The Hive UI controller",
+    description: "Central controller for The Hive in ChatGPT or Claude. Use for commands like '@The hive open startup', '@The hive open browser', '@The hive open viewer <file>', '@The hive close', '@The hive back', '@The hive refresh', '@The hive focus', '@The hive status', and '@The hive modal <permissions|move|info|upload|delete|close>'.",
+    inputSchema: {
+      action: z.enum(["open", "close", "back", "refresh", "focus", "status", "modal"]),
+      screen: z.enum(HIVE_SCREENS).optional(),
+      target: z.string().optional().describe("Optional file, folder, or item for the selected screen"),
+      modal: z.enum([...HIVE_MODALS, "close"]).optional(),
+      options: z.record(z.any()).optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
+    _meta: uiMeta,
+  }, async ({ action, screen, target, modal, options }) => {
+    if (action === "open") {
+      const next = screen || "startup";
+      if (hiveUiState.open && hiveUiState.currentScreen !== next) hiveUiState.history.push(hiveUiState.currentScreen);
+      hiveUiState.currentScreen = next;
+      hiveUiState.open = true;
+      hiveUiState.focused = true;
+      hiveUiState.modal = null;
+    } else if (action === "close") {
+      hiveUiState.open = false;
+      hiveUiState.focused = false;
+      hiveUiState.modal = null;
+    } else if (action === "back") {
+      hiveUiState.currentScreen = hiveUiState.history.pop() || "startup";
+      hiveUiState.open = true;
+      hiveUiState.modal = null;
+    } else if (action === "refresh") {
+      hiveUiState.revision += 1;
+      hiveUiState.open = true;
+    } else if (action === "focus") {
+      hiveUiState.open = true;
+      hiveUiState.focused = true;
+    } else if (action === "modal") {
+      hiveUiState.open = true;
+      hiveUiState.modal = modal === "close" ? null : (modal || null);
+    }
+    if (target) hiveUiState.selectedFiles = [target];
+    if (options) hiveUiState.filters = { ...hiveUiState.filters, ...options };
+    const text = action === "status" ? `Hive UI: ${hiveUiState.open ? "open" : "closed"}; screen=${hiveUiState.currentScreen}; modal=${hiveUiState.modal || "none"}; history=${hiveUiState.history.length}` : `Hive UI ${action}: ${screen || modal || hiveUiState.currentScreen}`;
+    return { content: [{ type: "text", text }], structuredContent: hiveUiSnapshot({ action, target: target || null }) };
+  });
 
   server.registerTool("show_hive", {
     title: "Open The Hive",

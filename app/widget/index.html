@@ -18,6 +18,8 @@ body{margin:0;padding:12px}
 .doc-search{display:grid;grid-template-columns:1fr auto auto auto;gap:6px;padding:8px;border-top:1px solid #27344c;background:#111827}.doc-body mark{background:#ffd54f;color:#111}.file.selected{outline:2px solid #4f86d9}.file button{padding:5px 7px}.files{scrollbar-width:thin}.busy{opacity:.65;pointer-events:none}
 @media(max-width:520px){.head{align-items:flex-start}.head-actions{justify-content:flex-end}.card.large{min-height:78vh}.doc-head{align-items:flex-start;flex-wrap:wrap}.doc-search{grid-template-columns:1fr 1fr}.doc-search input{grid-column:1/-1}}
 
+
+.hive-modal{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:14px}.hive-modal.hidden{display:none}.hive-modal-card{width:min(620px,100%);max-height:85vh;overflow:auto;background:#171e2d;border:1px solid #42516e;border-radius:14px;padding:12px}.modal-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.modal-body{margin-top:10px}.controller-closed{display:none!important}
 </style>
 </head>
 <body>
@@ -37,7 +39,8 @@ body{margin:0;padding:12px}
     <button data-tab="context">Context</button>
     <button data-tab="files">Files</button>
     <button data-tab="upload">Upload</button>
-    <button data-tab="system">System</button>
+    <button data-tab="system">Settings</button>
+    <button data-tab="permissions">Permissions</button>
   </div>
 
   <section id="startup" class="panel active">
@@ -94,6 +97,17 @@ body{margin:0;padding:12px}
     </div>
   </section>
 
+  <section id="permissions" class="panel">
+    <div class="system-card"><strong>Permissions</strong><p class="muted">Select a file or folder in Browser, then open the permissions dialog. Current permissions are read from the Hive permission system; changes require confirmation.</p><button id="openPermissionsModal">Open permissions</button></div>
+  </section>
+
+  <div id="hiveModal" class="hive-modal hidden">
+    <div class="hive-modal-card">
+      <div class="modal-head"><strong id="modalTitle">Hive action</strong><button id="modalClose">X</button></div>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
+  </div>
+
   <section id="docViewer" class="doc-viewer hidden">
     <div class="doc-head">
       <div class="doc-title"><strong id="docName">Document</strong><span id="docMeta" class="muted"></span></div>
@@ -127,9 +141,13 @@ async function tool(name,args={}){setBusy(true);try{return await callTool(name,a
 
 function renderDocument(doc){docName.textContent=doc.name||doc.path||'Document';docMeta.textContent=[doc.format,doc.pages?doc.pages+' pages':null,doc.totalLines?doc.totalLines+' lines':null,doc.truncated?'partial view':null].filter(Boolean).join(' • ');docBody.textContent=doc.text||'(no readable text extracted)';docViewer.classList.remove('hidden');docViewer.classList.toggle('expanded',!doc.preview);docExpand.textContent=docViewer.classList.contains('expanded')?'Collapse':'Expand';}
 function setTab(name){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===name));saveUi();}
-function render(d){if(!d)return;if(d.mode==='document_viewer'&&d.document){renderDocument(d.document);return;}if(d.config){project.value=d.config.defaultProject||'Mental';loadstrength.value=d.config.defaultStrength||'med';}if(d.loadstrength)loadstrength.value=d.loadstrength;strength.textContent=(d.loadstrength||loadstrength.value||'').toUpperCase();if(d.projects?.length){title.textContent=`${d.projects.join(' + ')} active`;subtitle.textContent='Loaded into this chat';}const files=d.activeFiles||d.visibleLoadedFiles||[];stats.innerHTML=`<span class="pill">${d.activeFileCount??files.length} active</span><span class="pill">${d.totalCharactersLoaded||0} chars</span><span class="pill">${files.filter(f=>f.truncated).length} partial</span>`;activeFiles.innerHTML=files.length?files.map(f=>`<div class="file"><span class="${f.truncated?'partial':'ok'}">${f.truncated?'◐':'✓'}</span><span>${esc(f.path)}<div class="muted">${esc(f.source||'active')}</div></span><span class="file-actions"><button data-unload="${esc(f.path)}">Unload</button></span></div>`).join(''):'<div class="muted">No active Hive files.</div>';activeFiles.querySelectorAll('[data-unload]').forEach(b=>b.onclick=async()=>render((await callTool('unload_context_file',{filepath:b.dataset.unload})).structuredContent));if(d.mode==='chooser')setTab(d.view||'startup');if(d.mode==='loaded'||d.mode==='active')setTab('context');}
+function screenToTab(screen){return({startup:'startup',browser:'files',viewer:'files',context:'context',settings:'system',permissions:'permissions',search:'files',move:'files',upload:'upload'})[screen]||'startup';}
+function showHiveModal(name,target){modalTitle.textContent=`${name.charAt(0).toUpperCase()+name.slice(1)}`;const selected=target||loadPath.value||moveFrom.value||'(nothing selected)';const bodies={permissions:`Permissions for: ${selected}`,move:`Move selected item: ${selected}`,info:`File information: ${selected}`,upload:`Upload destination: ${uploadDestination.value||'_sorter'}`,delete:`Move to trash: ${selected}`};modalBody.textContent=bodies[name]||name;hiveModal.classList.remove('hidden');}
+async function handleUiController(d){const ui=d.ui||{};const card=document.querySelector('.card');card.classList.toggle('controller-closed',ui.open===false);if(ui.open===false)return;const screen=ui.currentScreen||'startup';setTab(screenToTab(screen));if(screen==='search'){fileSearch.focus();}else if(screen==='move'){moveFrom.focus();}else if(screen==='upload'){uploadDestination.focus();}else if(screen==='viewer'){const target=d.target||ui.selectedFiles?.[0];if(target){loadPath.value=target;const r=await tool('view_file',{filepath:target});render(r.structuredContent);}}else if(screen==='browser'){folder.focus();}if(ui.modal)showHiveModal(ui.modal,d.target||ui.selectedFiles?.[0]);else hiveModal.classList.add('hidden');if(d.action==='refresh'){if(screen==='context')refresh();else if(screen==='browser')browse.click();}if(d.action==='focus')card.scrollIntoView({behavior:'smooth',block:'start'});}
+function render(d){if(!d)return;if(d.mode==='ui_controller'){handleUiController(d);return;}if(d.mode==='document_viewer'&&d.document){renderDocument(d.document);return;}if(d.config){project.value=d.config.defaultProject||'Mental';loadstrength.value=d.config.defaultStrength||'med';}if(d.loadstrength)loadstrength.value=d.loadstrength;strength.textContent=(d.loadstrength||loadstrength.value||'').toUpperCase();if(d.projects?.length){title.textContent=`${d.projects.join(' + ')} active`;subtitle.textContent='Loaded into this chat';}const files=d.activeFiles||d.visibleLoadedFiles||[];stats.innerHTML=`<span class="pill">${d.activeFileCount??files.length} active</span><span class="pill">${d.totalCharactersLoaded||0} chars</span><span class="pill">${files.filter(f=>f.truncated).length} partial</span>`;activeFiles.innerHTML=files.length?files.map(f=>`<div class="file"><span class="${f.truncated?'partial':'ok'}">${f.truncated?'◐':'✓'}</span><span>${esc(f.path)}<div class="muted">${esc(f.source||'active')}</div></span><span class="file-actions"><button data-unload="${esc(f.path)}">Unload</button></span></div>`).join(''):'<div class="muted">No active Hive files.</div>';activeFiles.querySelectorAll('[data-unload]').forEach(b=>b.onclick=async()=>render((await callTool('unload_context_file',{filepath:b.dataset.unload})).structuredContent));if(d.mode==='chooser')setTab(d.view||'startup');if(d.mode==='loaded'||d.mode==='active')setTab('context');}
 async function refresh(){const r=await callTool('list_active_context',{});render(r.structuredContent);output.classList.add('hidden');}
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+modalClose.onclick=()=>{hiveModal.classList.add('hidden');callTool('hive_ui',{action:'modal',modal:'close'}).catch(()=>{});};openPermissionsModal.onclick=()=>showHiveModal('permissions',loadPath.value||moveFrom.value);
 start.onclick=async()=>{const r=await callTool('startup',{project:project.value,loadstrength:loadstrength.value});render(r.structuredContent);show(textFrom(r));};
 showContext.onclick=refresh;refreshContext.onclick=refresh;
 loadProfiles.onclick=async()=>{const r=await callTool('load_all_profiles',{});render(r.structuredContent);output.classList.add('hidden');};
