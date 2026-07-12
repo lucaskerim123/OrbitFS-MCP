@@ -14,6 +14,7 @@ import { jwtVerify, SignJWT } from "jose";
 import { mountOAuth, getOAuthState } from "./oauth.js";
 import { makeOps } from "./hive-ops.js";
 import archiver from "archiver";
+import mammoth from "mammoth";
 
 const ROOT = process.env.HIVE_ROOT;
 const API_KEY = process.env.HIVE_API_KEY;
@@ -1046,8 +1047,8 @@ function buildFirestormRuleFiles(load) {
 const STARTUP_FILE_CHAR_CAP = { low: 4000, med: 8000, high: 16000 };
 const STARTUP_FOLDER_ENTRY_CAP = 40;
 const STARTUP_CONTEXT_FILE_LIMIT = { low: 0, med: 25, high: 60 };
-const STARTUP_CONTEXT_TOTAL_CHAR_CAP = { low: 0, med: 150_000, high: 500_000 };
-const STARTUP_CONTEXT_FILE_CHAR_CAP = { low: 0, med: 12_000, high: 20_000 };
+const STARTUP_CONTEXT_TOTAL_CHAR_CAP = { low: 100_000, med: 200_000, high: 500_000 };
+const STARTUP_CONTEXT_FILE_CHAR_CAP = { low: 10_000, med: 12_000, high: 20_000 };
 const STARTUP_TEXT_EXTENSIONS = new Set([
   ".txt", ".md", ".markdown", ".json", ".jsonl", ".csv", ".tsv",
   ".yaml", ".yml", ".xml", ".html", ".htm", ".js", ".mjs", ".cjs",
@@ -1062,17 +1063,34 @@ function clipStartupText(text, cap, source) {
 }
 
 function isStartupReadableFile(filepath) {
-  return STARTUP_TEXT_EXTENSIONS.has(path.extname(filepath).toLowerCase());
+  const ext = path.extname(filepath).toLowerCase();
+  return STARTUP_TEXT_EXTENSIONS.has(ext) || ext === ".docx";
+}
+
+function isMandatoryStartupFile(filepath) {
+  const normalized = normalizeRelativePath(filepath).toLowerCase();
+  const parts = normalized.split("/");
+  const basename = parts.at(-1) || "";
+  const inLogsOrProfiles = parts.slice(0, -1).some((part) => /(^|\s)(logs?|profiles?)(\s|$)/i.test(part));
+  const namedMentalHealthProfile = /mental[\s_-]*health/.test(normalized)
+    && /profile/.test(normalized)
+    && (/(^|[^a-z])luke([^a-z]|$)/.test(normalized) || /(^|[^a-z])laura([^a-z]|$)/.test(normalized));
+  return inLogsOrProfiles || namedMentalHealthProfile || basename === "core.docx";
+}
+
+async function readStartupFile(filepath) {
+  if (path.extname(filepath).toLowerCase() !== ".docx") return ops.readFile(filepath);
+  const result = await mammoth.extractRawText({ path: ops.safeResolve(filepath) });
+  return result.value;
 }
 
 function prioritizeIndexedFiles(filepaths, fileIndexText = "") {
-  if (!fileIndexText) return filepaths;
   const indexLower = fileIndexText.toLowerCase().replace(/\\\\/g, "/");
   return [...filepaths].sort((a, b) => {
     const aLower = a.toLowerCase();
     const bLower = b.toLowerCase();
-    const aScore = indexLower.includes(aLower) ? 2 : (indexLower.includes(path.basename(aLower)) ? 1 : 0);
-    const bScore = indexLower.includes(bLower) ? 2 : (indexLower.includes(path.basename(bLower)) ? 1 : 0);
+    const aScore = (isMandatoryStartupFile(a) ? 100 : 0) + (indexLower.includes(aLower) ? 2 : (indexLower.includes(path.basename(aLower)) ? 1 : 0));
+    const bScore = (isMandatoryStartupFile(b) ? 100 : 0) + (indexLower.includes(bLower) ? 2 : (indexLower.includes(path.basename(bLower)) ? 1 : 0));
     return bScore - aScore || a.localeCompare(b);
   });
 }
@@ -1103,20 +1121,25 @@ async function loadStartupContextFiles(filepaths, load) {
   const fileLimit = STARTUP_CONTEXT_FILE_LIMIT[load];
   const totalCap = STARTUP_CONTEXT_TOTAL_CHAR_CAP[load];
   const perFileCap = STARTUP_CONTEXT_FILE_CHAR_CAP[load];
-  const selected = filepaths.slice(0, fileLimit);
+  const mandatory = filepaths.filter(isMandatoryStartupFile);
+  const normal = filepaths.filter((filepath) => !isMandatoryStartupFile(filepath));
+  const selected = [...mandatory, ...(load === "low" ? [] : normal.slice(0, fileLimit))];
   const files = [];
   let totalChars = 0;
   for (let offset = 0; offset < selected.length && totalChars < totalCap; offset += BATCH_READ_MAX_FILES) {
-    const result = await readFilesBatch(selected.slice(offset, offset + BATCH_READ_MAX_FILES));
-    for (const item of result.files) {
-      if (item.error) {
-        files.push(item);
+    const batch = selected.slice(offset, offset + BATCH_READ_MAX_FILES);
+    for (const filepath of batch) {
+      let data;
+      try {
+        data = await readStartupFile(filepath);
+      } catch (err) {
+        files.push({ filepath, error: err.message });
         continue;
       }
       const remaining = totalCap - totalChars;
-      const content = item.content.slice(0, Math.min(perFileCap, remaining));
+      const content = data.slice(0, Math.min(perFileCap, remaining));
       totalChars += content.length;
-      files.push({ ...item, content, truncated: item.truncated || content.length < item.content.length });
+      files.push({ filepath, content, chars: data.length, truncated: content.length < data.length });
       if (totalChars >= totalCap) break;
     }
   }
@@ -1203,7 +1226,7 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
   // Discovery is recursive and live, so renamed/new files are picked up
   // without editing this startup command. Archive and Pure Vent Mode stay out.
   let contextLoad = { files: [], totalChars: 0, discoveredCount: 0, selectedCount: 0, truncated: false };
-  if (load !== "low") {
+  {
     const contextPaths = await discoverStartupContextFiles(
       listedFolders,
       [...startupFiles, ...ruleFiles, FIRESTORM_OPTIONAL_FILES.fileIndex],
@@ -2402,7 +2425,6 @@ serverHandle = app.listen(PORT, async () => {
   }, TRASH_PURGE_INTERVAL_MS).unref();
   logEvent("server.start", { port: PORT, root: ROOT, publicBaseUrl: PUBLIC_BASE_URL });
 });
-
 
 
 
