@@ -13,6 +13,7 @@ import { z } from "zod";
 import { jwtVerify, SignJWT } from "jose";
 import { mountOAuth, getOAuthState } from "./oauth.js";
 import { makeOps } from "./hive-ops.js";
+import archiver from "archiver";
 
 const ROOT = process.env.HIVE_ROOT;
 const API_KEY = process.env.HIVE_API_KEY;
@@ -485,6 +486,12 @@ function assertMutablePath(relPath = "", action = "modify") {
 
 const FILE_VIEW_TOKEN_TTL = "15m";
 const FILE_VIEW_TOKEN_TTL_MINUTES = 15;
+const DOWNLOAD_TOKEN_TTL = "15m";
+const DOWNLOAD_TOKEN_TTL_MINUTES = 15;
+const BATCH_READ_MAX_FILES = 50;
+const BATCH_READ_MAX_CHARS = 500_000;
+const BATCH_READ_MAX_CHARS_PER_FILE = 100_000;
+const RECURSIVE_LIST_MAX_ENTRIES = 10_000;
 const UPLOAD_LINK_TOKEN_TTL = "15m";
 const UPLOAD_LINK_TOKEN_TTL_MINUTES = 15;
 const uploadTokens = new Map();
@@ -513,6 +520,68 @@ async function buildFileWebLink(filepath) {
   const token = await signFileViewToken(normalized);
   const url = `${PUBLIC_BASE_URL}/open?path=${encodeURIComponent(normalized)}&token=${token}`;
   return { url, expiresInMinutes: FILE_VIEW_TOKEN_TTL_MINUTES };
+}
+
+async function buildTemporaryDownloadLink(filepath, requireFolder = false) {
+  const normalized = normalizeRelativePath(filepath);
+  if (!normalized) throw new Error("Path is required");
+  const full = ops.safeResolve(normalized);
+  const st = await fs.stat(full);
+  const kind = st.isDirectory() ? "folder" : "file";
+  if (requireFolder && kind !== "folder") throw new Error(`"${normalized}" is a file, not a folder`);
+  const token = await new SignJWT({ path: normalized, kind, purpose: "temporary_download" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setIssuer(PUBLIC_BASE_URL)
+    .setExpirationTime(DOWNLOAD_TOKEN_TTL)
+    .sign(SECRET_KEY);
+  const url = new URL("/download-temp", PUBLIC_BASE_URL);
+  url.searchParams.set("path", normalized);
+  url.searchParams.set("token", token);
+  return { url: url.toString(), expiresInMinutes: DOWNLOAD_TOKEN_TTL_MINUTES, kind };
+}
+
+async function streamFolderZip(res, relPath) {
+  const normalized = normalizeRelativePath(relPath);
+  const full = ops.safeResolve(normalized);
+  const st = await fs.stat(full);
+  if (!st.isDirectory()) throw new Error(`"${normalized}" is not a folder`);
+  const archiveName = `${path.basename(full) || "Master-Hive"}.zip`;
+  res.attachment(archiveName);
+  res.type("application/zip");
+  const archive = archiver("zip", { zlib: { level: 9 } });
+  archive.on("warning", (err) => logError("zip.warning", err, { path: normalized }));
+  archive.on("error", (err) => {
+    logError("zip.failed", err, { path: normalized });
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+    else res.destroy(err);
+  });
+  archive.pipe(res);
+  archive.directory(full, false);
+  await archive.finalize();
+}
+
+async function readFilesBatch(filepaths) {
+  if (!Array.isArray(filepaths) || filepaths.length === 0) throw new Error("filepaths must contain at least one path");
+  if (filepaths.length > BATCH_READ_MAX_FILES) throw new Error(`A batch may contain at most ${BATCH_READ_MAX_FILES} files`);
+  const files = [];
+  let totalChars = 0;
+  for (const requested of filepaths) {
+    const filepath = normalizeRelativePath(requested);
+    try {
+      if (!filepath) throw new Error("Path is required");
+      const data = await ops.readFile(filepath);
+      const remaining = Math.max(0, BATCH_READ_MAX_CHARS - totalChars);
+      const allowed = Math.min(BATCH_READ_MAX_CHARS_PER_FILE, remaining);
+      const content = data.slice(0, allowed);
+      totalChars += content.length;
+      files.push({ filepath, content, truncated: content.length < data.length, chars: data.length });
+      if (totalChars >= BATCH_READ_MAX_CHARS) break;
+    } catch (err) {
+      files.push({ filepath, error: err.message });
+    }
+  }
+  return { files, totalChars, limits: { maxFiles: BATCH_READ_MAX_FILES, maxTotalChars: BATCH_READ_MAX_CHARS, maxCharsPerFile: BATCH_READ_MAX_CHARS_PER_FILE } };
 }
 
 function pruneUploadTokens() {
@@ -1109,6 +1178,69 @@ function buildServer(authContext = {}) {
       const data = await ops.readFile(filepath);
       logEvent("tool.read_file.ok", { ...authContext, filepath, chars: data.length });
       return { content: [{ type: "text", text: data }] };
+    }
+  );
+
+  server.tool(
+    "read_folder_recursive",
+    "Recursively list every file and subfolder beneath a Master Hive folder. Use this when the full folder tree is needed, including protected project roots such as 0. Core.",
+    {
+      path: z.string().optional().describe("Relative folder path, default Master Hive root"),
+      max_entries: z.number().int().min(1).max(RECURSIVE_LIST_MAX_ENTRIES).optional().describe("Maximum entries to return, default 10000"),
+    },
+    async ({ path: folderPath, max_entries }) => {
+      const subpath = normalizeRelativePath(folderPath || "");
+      const limit = max_entries || RECURSIVE_LIST_MAX_ENTRIES;
+      logEvent("tool.read_folder_recursive.start", { ...authContext, subpath, limit });
+      let entries = await ops.listFiles(subpath, { recursive: true });
+      entries = filterVentFolder(subpath, entries, true);
+      const truncated = entries.length > limit;
+      const selected = entries.slice(0, limit);
+      logEvent("tool.read_folder_recursive.ok", { ...authContext, subpath, count: selected.length, truncated });
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({ path: subpath, entries: selected, count: selected.length, truncated }, null, 2),
+        }],
+      };
+    }
+  );
+
+  server.tool(
+    "read_files_batch",
+    "Read multiple individual text files from the Master Hive in one call. Each result includes its path, content, original character count, and whether it was truncated.",
+    {
+      filepaths: z.array(z.string()).min(1).max(BATCH_READ_MAX_FILES).describe("Relative paths of the files to read"),
+    },
+    async ({ filepaths }) => {
+      logEvent("tool.read_files_batch.start", { ...authContext, count: filepaths.length });
+      const result = await readFilesBatch(filepaths);
+      logEvent("tool.read_files_batch.ok", { ...authContext, requested: filepaths.length, returned: result.files.length, totalChars: result.totalChars });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "export_folder",
+    "Export a Master Hive folder as a ZIP archive. Returns a temporary browser download link scoped to that folder and expiring after 15 minutes.",
+    { path: z.string().describe("Relative path of the folder to export") },
+    async ({ path: folderPath }) => {
+      logEvent("tool.export_folder.start", { ...authContext, path: folderPath });
+      const result = await buildTemporaryDownloadLink(folderPath, true);
+      logEvent("tool.export_folder.ok", { ...authContext, path: folderPath });
+      return { content: [{ type: "text", text: `ZIP download link (expires in ${result.expiresInMinutes} minutes): ${result.url}` }] };
+    }
+  );
+
+  server.tool(
+    "create_temporary_download_link",
+    "Create a temporary browser download link for a Master Hive file or folder. Files download directly; folders download as ZIP archives. The link is path-scoped and expires after 15 minutes.",
+    { path: z.string().describe("Relative path of the file or folder") },
+    async ({ path: targetPath }) => {
+      logEvent("tool.create_temporary_download_link.start", { ...authContext, path: targetPath });
+      const result = await buildTemporaryDownloadLink(targetPath);
+      logEvent("tool.create_temporary_download_link.ok", { ...authContext, path: targetPath, kind: result.kind });
+      return { content: [{ type: "text", text: `Temporary ${result.kind} download link (expires in ${result.expiresInMinutes} minutes): ${result.url}` }] };
     }
   );
 
@@ -1788,6 +1920,44 @@ app.get("/api/files", async (req, res) => {
   }
 });
 
+app.get("/api/files/recursive", async (req, res) => {
+  try {
+    const subpath = normalizeRelativePath(req.query.path || "");
+    const limit = Math.min(Number(req.query.max_entries || RECURSIVE_LIST_MAX_ENTRIES), RECURSIVE_LIST_MAX_ENTRIES);
+    let entries = await ops.listFiles(subpath, { recursive: true });
+    entries = filterVentFolder(subpath, entries, true);
+    const truncated = entries.length > limit;
+    entries = entries.slice(0, limit);
+    logEvent("api.files.recursive.ok", { ...requestContext(req), subpath, count: entries.length, truncated });
+    res.json({ path: subpath, entries, count: entries.length, truncated });
+  } catch (err) {
+    logError("api.files.recursive.failed", err, { ...requestContext(req), path: req.query.path || "" });
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/files/read-batch", async (req, res) => {
+  try {
+    const result = await readFilesBatch(req.body?.filepaths);
+    logEvent("api.files.read_batch.ok", { ...requestContext(req), requested: req.body?.filepaths?.length || 0, returned: result.files.length });
+    res.json(result);
+  } catch (err) {
+    logError("api.files.read_batch.failed", err, requestContext(req));
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/api/export-folder-link", async (req, res) => {
+  try {
+    const result = await buildTemporaryDownloadLink(req.query.path, true);
+    logEvent("api.export_folder_link.ok", { ...requestContext(req), path: req.query.path });
+    res.json(result);
+  } catch (err) {
+    logError("api.export_folder_link.failed", err, { ...requestContext(req), path: req.query.path });
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get("/api/file", async (req, res) => {
   try {
     const content = await ops.readFile(req.query.path);
@@ -1912,6 +2082,28 @@ app.get("/open", async (req, res) => {
   } catch (err) {
     logError("open.file.failed", err, { ...requestContext(req), path: relPath });
     res.status(401).send("This link is invalid or has expired. Ask for a fresh one with /openfileweb <file>.");
+  }
+});
+
+app.get("/download-temp", async (req, res) => {
+  const relPath = normalizeRelativePath(req.query.path);
+  try {
+    const token = req.query.token;
+    if (!token) return res.status(401).send("Missing or expired download token.");
+    const { payload } = await jwtVerify(String(token), SECRET_KEY, { issuer: PUBLIC_BASE_URL });
+    if (payload.purpose !== "temporary_download" || payload.path !== relPath) {
+      throw new Error("Token does not match the requested path");
+    }
+    const full = ops.safeResolve(relPath);
+    const st = await fs.stat(full);
+    const actualKind = st.isDirectory() ? "folder" : "file";
+    if (payload.kind !== actualKind) throw new Error("Path type changed after the link was created");
+    logEvent("temporary_download.ok", { ...requestContext(req), path: relPath, kind: actualKind });
+    if (actualKind === "folder") return await streamFolderZip(res, relPath);
+    return res.download(full, path.basename(full));
+  } catch (err) {
+    logError("temporary_download.failed", err, { ...requestContext(req), path: relPath });
+    if (!res.headersSent) res.status(401).send("This download link is invalid or has expired. Ask for a fresh link.");
   }
 });
 
