@@ -43,3 +43,4 @@ replaceExact(
 );
 
 console.log("Applied MCP mobile and high-load audit fixes.");
+// Workflow trigger marker: 2026-07-13
