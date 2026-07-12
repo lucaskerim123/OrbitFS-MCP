@@ -582,7 +582,7 @@ paths:
     post:
       operationId: startupFirestorm
       summary: Load hardcoded Project FireStorm startup context.
-      description: Equivalent to `/startup <project> <low|med|high>`. Read-only. Always loads readable Logs and Profiles content, Luke and Laura mental-health profiles, and core.docx; med/high also load bounded indexed/discovered project files. Archive and Pure Vent Mode are excluded.
+      description: Equivalent to `/startup <project> <low|med|high>`. Read-only. Always loads every readable file in 0. Core/Master Logs, Mental_health_profiles_core.docx, and Luke's and Laura's documents from Master Profiles. Other Master Profiles are deferred until requested. Archive and Pure Vent Mode are excluded.
       parameters:
         - $ref: "#/components/parameters/HiveFlowHeader"
       requestBody:
@@ -765,6 +765,5 @@ paths:
                 required:
                   - moved
                   - errors
-
 
 
