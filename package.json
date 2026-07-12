@@ -2,11 +2,10 @@
   "name": "orbitfs-mcp-server",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "apply-startup-ui": "node scripts/apply-startup-ui.mjs",
-    "test": "node --check server.js && node --check scripts/apply-startup-ui.mjs"
+    "test": "node --check server.js && node --check server-core.js"
   },
   "keywords": [],
   "author": "",
