@@ -142,7 +142,8 @@ low:
 - read the startup files above
 - read all startup rule files above
 - read file_index.json if present
-- do not scan folders
+- always load readable files under Logs and Profiles, Luke and Laura mental-health profiles, and core.docx
+- do not load other working files
 
 med:
 - read the startup files above
@@ -150,6 +151,7 @@ med:
 - read file_index.json if present
 - recursively discover current readable files in the relevant project folders
 - prioritise files referenced by file_index.json and load their contents into context within the server limits
+- always load readable files under Logs and Profiles, Luke and Laura mental-health profiles, and core.docx
 - never include archives in startup scope
 - never include Pure Vent Mode in startup discovery
 
@@ -158,6 +160,7 @@ high:
 - read all startup rule files above
 - read file_index.json if present
 - recursively discover current readable files and load a larger bounded set of their contents into context
+- always load readable files under Logs and Profiles, Luke and Laura mental-health profiles, and core.docx
 - never include archives in startup scope unless explicitly requested
 - never include Pure Vent Mode in startup discovery
 
