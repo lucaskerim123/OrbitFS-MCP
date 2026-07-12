@@ -1,4 +1,4 @@
-﻿import path from "path";
+import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 dotenv.config({ path: path.join(path.dirname(fileURLToPath(import.meta.url)), ".env") });
@@ -15,6 +15,7 @@ import { mountOAuth, getOAuthState } from "./oauth.js";
 import { makeOps } from "./hive-ops.js";
 import archiver from "archiver";
 import mammoth from "mammoth";
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
 const ROOT = process.env.HIVE_ROOT;
 const API_KEY = process.env.HIVE_API_KEY;
@@ -1059,7 +1060,7 @@ const STARTUP_TEXT_EXTENSIONS = new Set([
 function clipStartupText(text, cap, source) {
   const trimmed = text.trim();
   if (trimmed.length <= cap) return trimmed;
-  return `${trimmed.slice(0, cap)}\n… (truncated - use read_file "${source}" for the rest)`;
+  return `${trimmed.slice(0, cap)}\nÃ¢â‚¬Â¦ (truncated - use read_file "${source}" for the rest)`;
 }
 
 function isStartupReadableFile(filepath) {
@@ -1089,6 +1090,45 @@ async function readStartupFile(filepath) {
   if (path.extname(filepath).toLowerCase() !== ".docx") return ops.readFile(filepath);
   const result = await mammoth.extractRawText({ path: ops.safeResolve(filepath) });
   return result.value;
+}
+
+async function extractViewableFile(filepath) {
+  const ext = path.extname(filepath).toLowerCase();
+  if (ext === ".docx") {
+    const result = await mammoth.extractRawText({ path: ops.safeResolve(filepath) });
+    return { text: result.value, format: "DOCX", pages: null };
+  }
+  if (ext === ".pdf") {
+    const result = await pdfParse(await fs.readFile(ops.safeResolve(filepath)));
+    return { text: result.text || "", format: "PDF", pages: result.numpages || null };
+  }
+  if (STARTUP_TEXT_EXTENSIONS.has(ext)) {
+    return { text: await ops.readFile(filepath), format: (ext.slice(1) || "text").toUpperCase(), pages: null };
+  }
+  throw new Error(`Unsupported viewer format "${ext || "(none)"}". Supported: PDF, DOCX, and readable text files.`);
+}
+
+function buildDocumentView(filepath, extracted, preview) {
+  const fullText = String(extracted.text || "");
+  const maxLines = preview ? 80 : 2500;
+  const maxChars = preview ? 12000 : 250000;
+  const lines = fullText.split(/\r?\n/);
+  let text = lines.slice(0, maxLines).join("\n");
+  if (text.length > maxChars) text = text.slice(0, maxChars);
+  return {
+    mode: "document_viewer",
+    document: {
+      path: filepath,
+      name: path.basename(filepath),
+      format: extracted.format,
+      pages: extracted.pages,
+      totalLines: lines.length,
+      totalChars: fullText.length,
+      text,
+      preview,
+      truncated: text.length < fullText.length,
+    },
+  };
 }
 
 function prioritizeIndexedFiles(filepaths, fileIndexText = "") {
@@ -1252,7 +1292,7 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
       const shown = entries.slice(0, STARTUP_FOLDER_ENTRY_CAP);
       sections.push("", `===== ${folder} =====`, summarizeEntries(shown, "  "));
       if (entries.length > shown.length) {
-        sections.push(`  … ${entries.length - shown.length} more - use list_files "${folder}" for the full listing`);
+        sections.push(`  Ã¢â‚¬Â¦ ${entries.length - shown.length} more - use list_files "${folder}" for the full listing`);
       }
       if (load === "high") {
         const childDirs = entries
@@ -1266,7 +1306,7 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
             const childShown = childEntries.slice(0, STARTUP_FOLDER_ENTRY_CAP);
             sections.push("", `--- ${childDir} ---`, summarizeEntries(childShown, "    "));
             if (childEntries.length > childShown.length) {
-              sections.push(`    … ${childEntries.length - childShown.length} more - use list_files "${childDir}"`);
+              sections.push(`    Ã¢â‚¬Â¦ ${childEntries.length - childShown.length} more - use list_files "${childDir}"`);
             }
           } catch {}
         }
@@ -1294,7 +1334,7 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
         sections.push("", `===== ${item.filepath} =====`, `(unavailable: ${item.error})`);
         continue;
       }
-      const truncationNote = item.truncated ? "\n… (startup copy truncated; use read_file for the complete file)" : "";
+      const truncationNote = item.truncated ? "\nÃ¢â‚¬Â¦ (startup copy truncated; use read_file for the complete file)" : "";
       sections.push("", `===== ${item.filepath} =====`, `${item.content}${truncationNote}`);
     }
     if (contextLoad.truncated) {
@@ -1395,6 +1435,38 @@ function buildServer(authContext = {}) {
           type: "text",
           text: `[INTERNAL FILE CONTEXT - Read and understand this entire file. Treat it as active context. Do not summarize or repeat it unless the user asks.]\n\n===== ${normalized} =====\n${data}\n\n[END FILE CONTEXT: ${normalized}]`,
         }],
+      };
+    }
+  );
+
+  server.tool(
+    "view_file",
+    "Open a PDF, DOCX, or readable text file in the expandable Hive document viewer UI.",
+    { filepath: z.string().describe("File path or filename") },
+    async ({ filepath }) => {
+      const resolved = await resolveHiveReference(filepath, "file");
+      const extracted = await extractViewableFile(resolved.path);
+      const structuredContent = buildDocumentView(resolved.path, extracted, false);
+      logEvent("tool.view_file.ok", { ...authContext, filepath: resolved.path, format: extracted.format });
+      return {
+        content: [{ type: "text", text: `Opened ${resolved.path} in the Hive document viewer.` }],
+        structuredContent,
+      };
+    }
+  );
+
+  server.tool(
+    "preview_file",
+    "Preview the first section of a PDF, DOCX, or readable text file in the compact Hive document viewer UI.",
+    { filepath: z.string().describe("File path or filename") },
+    async ({ filepath }) => {
+      const resolved = await resolveHiveReference(filepath, "file");
+      const extracted = await extractViewableFile(resolved.path);
+      const structuredContent = buildDocumentView(resolved.path, extracted, true);
+      logEvent("tool.preview_file.ok", { ...authContext, filepath: resolved.path, format: extracted.format });
+      return {
+        content: [{ type: "text", text: `Previewed ${resolved.path} in the Hive document viewer.` }],
+        structuredContent,
       };
     }
   );
@@ -1592,7 +1664,7 @@ function buildServer(authContext = {}) {
         .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
         .slice(0, 20);
       const text = entries.length
-        ? entries.map((entry, index) => `${index + 1}. ${entry.type === "dir" ? "📁" : "📄"} ${entry.path}`).join("\n")
+        ? entries.map((entry, index) => `${index + 1}. ${entry.type === "dir" ? "Ã°Å¸â€œÂ" : "Ã°Å¸â€œâ€ž"} ${entry.path}`).join("\n")
         : `(no matches for "${query}")`;
       return { content: [{ type: "text", text }] };
     }
@@ -1704,9 +1776,9 @@ function buildServer(authContext = {}) {
       session.active = state === "on";
       logEvent("tool.ventmode", { ...authContext, state });
       if (state === "on") {
-        return { content: [{ type: "text", text: "🔴\nVENT MODE — ACTIVE\nChat-scoped. Private. Raw. Go." }] };
+        return { content: [{ type: "text", text: "Ã°Å¸â€Â´\nVENT MODE Ã¢â‚¬â€ ACTIVE\nChat-scoped. Private. Raw. Go." }] };
       }
-      return { content: [{ type: "text", text: "VENT MODE — OFF" }] };
+      return { content: [{ type: "text", text: "VENT MODE Ã¢â‚¬â€ OFF" }] };
     }
   );
 
@@ -1977,6 +2049,22 @@ function buildServer(authContext = {}) {
     { filepath: z.string().describe("Relative path to the text or DOCX file") },
     "load_file",
     "Read the complete returned content and confirm only that the file is loaded and understood unless I ask for analysis or a summary."
+  );
+
+  toolPrompt(
+    "viewfile",
+    "Open a document in the expandable Hive viewer",
+    { filepath: z.string().describe("PDF, DOCX, or text file") },
+    "view_file",
+    "Show the returned Hive document viewer UI."
+  );
+
+  toolPrompt(
+    "previewfile",
+    "Preview a document in the compact Hive viewer",
+    { filepath: z.string().describe("PDF, DOCX, or text file") },
+    "preview_file",
+    "Show the returned Hive document viewer UI."
   );
 
   toolPrompt(
