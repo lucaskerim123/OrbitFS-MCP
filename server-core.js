@@ -1753,11 +1753,12 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "create_upload_link",
-    "Create a short-lived, single-use upload link for browser-based multipart uploads into the Hive. Use this when you cannot base64-encode the file for upload_file. The link expires after 15 minutes and uploads into the _sorter inbox by default.",
-    {},
-    async () => {
-      logEvent("tool.create_upload_link.start", authContext);
-      const { url, expiresInMinutes, destination } = await buildUploadLink(SORT_FOLDER);
+    "Create a short-lived, single-use upload link for browser-based multipart uploads into the Hive. The link expires after 15 minutes and defaults to the _sorter inbox.",
+    { destination: z.string().optional().describe("Destination folder; defaults to _sorter") },
+    async ({ destination: requestedDestination }) => {
+      const targetDestination = normalizeRelativePath(requestedDestination || SORT_FOLDER) || SORT_FOLDER;
+      logEvent("tool.create_upload_link.start", { ...authContext, destination: targetDestination });
+      const { url, expiresInMinutes, destination } = await buildUploadLink(targetDestination);
       logEvent("tool.create_upload_link.ok", { ...authContext, destination });
       return {
         content: [
