@@ -1041,16 +1041,92 @@ function buildFirestormRuleFiles(load) {
   return files;
 }
 
-// Keeps startup output phone-friendly: each inlined file and folder listing is
-// capped, and anything cut ends with a pointer so the model can read_file /
-// list_files the rest on demand instead of it all being dumped into chat.
+// Startup reads live working files into model context, but keeps hard limits so
+// one large Hive cannot overflow the MCP response or the client's context.
 const STARTUP_FILE_CHAR_CAP = { low: 4000, med: 8000, high: 16000 };
 const STARTUP_FOLDER_ENTRY_CAP = 40;
+const STARTUP_CONTEXT_FILE_LIMIT = { low: 0, med: 25, high: 60 };
+const STARTUP_CONTEXT_TOTAL_CHAR_CAP = { low: 0, med: 150_000, high: 500_000 };
+const STARTUP_CONTEXT_FILE_CHAR_CAP = { low: 0, med: 12_000, high: 20_000 };
+const STARTUP_TEXT_EXTENSIONS = new Set([
+  ".txt", ".md", ".markdown", ".json", ".jsonl", ".csv", ".tsv",
+  ".yaml", ".yml", ".xml", ".html", ".htm", ".js", ".mjs", ".cjs",
+  ".ts", ".tsx", ".jsx", ".css", ".scss", ".py", ".ps1", ".sh",
+  ".sql", ".log", ".ini", ".cfg", ".conf",
+]);
 
 function clipStartupText(text, cap, source) {
   const trimmed = text.trim();
   if (trimmed.length <= cap) return trimmed;
   return `${trimmed.slice(0, cap)}\n… (truncated - use read_file "${source}" for the rest)`;
+}
+
+function isStartupReadableFile(filepath) {
+  return STARTUP_TEXT_EXTENSIONS.has(path.extname(filepath).toLowerCase());
+}
+
+function prioritizeIndexedFiles(filepaths, fileIndexText = "") {
+  if (!fileIndexText) return filepaths;
+  const indexLower = fileIndexText.toLowerCase().replace(/\\\\/g, "/");
+  return [...filepaths].sort((a, b) => {
+    const aLower = a.toLowerCase();
+    const bLower = b.toLowerCase();
+    const aScore = indexLower.includes(aLower) ? 2 : (indexLower.includes(path.basename(aLower)) ? 1 : 0);
+    const bScore = indexLower.includes(bLower) ? 2 : (indexLower.includes(path.basename(bLower)) ? 1 : 0);
+    return bScore - aScore || a.localeCompare(b);
+  });
+}
+
+async function discoverStartupContextFiles(folders, alreadyLoaded, fileIndexText) {
+  const discovered = [];
+  const seen = new Set(alreadyLoaded.map(normalizeRelativePath));
+  for (const folder of folders) {
+    let entries;
+    try {
+      entries = await ops.listFiles(folder, { recursive: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.type !== "file") continue;
+      const filepath = normalizeRelativePath(entry.path);
+      if (!filepath || seen.has(filepath) || isArchivePath(filepath) || isVentFolderPath(filepath)) continue;
+      if (!isStartupReadableFile(filepath)) continue;
+      seen.add(filepath);
+      discovered.push(filepath);
+    }
+  }
+  return prioritizeIndexedFiles(discovered, fileIndexText);
+}
+
+async function loadStartupContextFiles(filepaths, load) {
+  const fileLimit = STARTUP_CONTEXT_FILE_LIMIT[load];
+  const totalCap = STARTUP_CONTEXT_TOTAL_CHAR_CAP[load];
+  const perFileCap = STARTUP_CONTEXT_FILE_CHAR_CAP[load];
+  const selected = filepaths.slice(0, fileLimit);
+  const files = [];
+  let totalChars = 0;
+  for (let offset = 0; offset < selected.length && totalChars < totalCap; offset += BATCH_READ_MAX_FILES) {
+    const result = await readFilesBatch(selected.slice(offset, offset + BATCH_READ_MAX_FILES));
+    for (const item of result.files) {
+      if (item.error) {
+        files.push(item);
+        continue;
+      }
+      const remaining = totalCap - totalChars;
+      const content = item.content.slice(0, Math.min(perFileCap, remaining));
+      totalChars += content.length;
+      files.push({ ...item, content, truncated: item.truncated || content.length < item.content.length });
+      if (totalChars >= totalCap) break;
+    }
+  }
+  return {
+    files,
+    totalChars,
+    discoveredCount: filepaths.length,
+    selectedCount: selected.length,
+    truncated: filepaths.length > selected.length || totalChars >= totalCap,
+  };
 }
 
 async function buildFirestormStartup(projectsInput, loadInput, authContext = {}) {
@@ -1073,6 +1149,17 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
   for (const file of [...startupFiles, ...ruleFiles]) {
     const content = await ops.readFile(file);
     sections.push("", `===== ${file} =====`, clipStartupText(content, fileCap, file));
+  }
+
+  // Always load the live index when present. It changes as the Hive changes
+  // and is used to prioritise which discovered working files enter context.
+  const fileIndexText = await readOptionalFile(FIRESTORM_OPTIONAL_FILES.fileIndex);
+  if (fileIndexText !== null) {
+    sections.push(
+      "",
+      `===== ${FIRESTORM_OPTIONAL_FILES.fileIndex} =====`,
+      clipStartupText(fileIndexText, fileCap, FIRESTORM_OPTIONAL_FILES.fileIndex)
+    );
   }
 
   // The folders: 0. Core plus each requested project's folder, top-level
@@ -1112,7 +1199,34 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
     }
   }
 
-  sections.push("", `File index (not inlined): read_file "${FIRESTORM_OPTIONAL_FILES.fileIndex}" or use search_files to locate things.`);
+  // med/high now load actual working-file content, not just folder names.
+  // Discovery is recursive and live, so renamed/new files are picked up
+  // without editing this startup command. Archive and Pure Vent Mode stay out.
+  let contextLoad = { files: [], totalChars: 0, discoveredCount: 0, selectedCount: 0, truncated: false };
+  if (load !== "low") {
+    const contextPaths = await discoverStartupContextFiles(
+      listedFolders,
+      [...startupFiles, ...ruleFiles, FIRESTORM_OPTIONAL_FILES.fileIndex],
+      fileIndexText || ""
+    );
+    contextLoad = await loadStartupContextFiles(contextPaths, load);
+    sections.push("", "Working files loaded into context:");
+    if (!contextLoad.files.length) sections.push("(no readable working files found)");
+    for (const item of contextLoad.files) {
+      if (item.error) {
+        sections.push("", `===== ${item.filepath} =====`, `(unavailable: ${item.error})`);
+        continue;
+      }
+      const truncationNote = item.truncated ? "\n… (startup copy truncated; use read_file for the complete file)" : "";
+      sections.push("", `===== ${item.filepath} =====`, `${item.content}${truncationNote}`);
+    }
+    if (contextLoad.truncated) {
+      sections.push(
+        "",
+        `Startup context limit reached: loaded ${contextLoad.files.length} of ${contextLoad.discoveredCount} readable files (${contextLoad.totalChars} characters). Use read_folder_recursive/read_files_batch for anything else needed.`
+      );
+    }
+  }
 
   const confirmations = projects
     .filter((name) => name !== "Master")
@@ -1132,6 +1246,9 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
     startupFiles: startupFiles.length,
     ruleFiles: ruleFiles.length,
     folders: folders.length,
+    discoveredContextFiles: contextLoad.discoveredCount,
+    loadedContextFiles: contextLoad.files.length,
+    loadedContextChars: contextLoad.totalChars,
   });
   return sections.join("\n");
 }
@@ -2285,7 +2402,6 @@ serverHandle = app.listen(PORT, async () => {
   }, TRASH_PURGE_INTERVAL_MS).unref();
   logEvent("server.start", { port: PORT, root: ROOT, publicBaseUrl: PUBLIC_BASE_URL });
 });
-
 
 
 
