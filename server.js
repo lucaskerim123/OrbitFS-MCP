@@ -62,8 +62,20 @@ function contextArray() {
   return [...activeContext.values()].sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.path.localeCompare(b.path));
 }
 
+function isBackgroundUiPath(filepath = "") {
+  const normalized = normalize(filepath).toLowerCase();
+  const parts = normalized.split("/").filter(Boolean);
+  const name = parts.at(-1) || "";
+  return parts.includes("_system")
+    || parts.includes("_trash")
+    || name === "file_index.json"
+    || name === "startup-loading.json"
+    || name === "loadorder"
+    || name === "project_rules.md";
+}
+
 function contextStructured(extra = {}) {
-  const files = contextArray();
+  const files = contextArray().filter((file) => !isBackgroundUiPath(file.path));
   return {
     mode: "active",
     activeFiles: files,
@@ -103,9 +115,9 @@ function visibleStartupResult(text, project, loadstrength) {
     mode: "loaded",
     projects,
     loadstrength,
-    visibleLoadedFiles: contextArray(),
-    loadedFileCount: files.length,
-    truncatedFileCount: contextArray().filter((file) => file.truncated).length,
+    visibleLoadedFiles: contextArray().filter((file) => !isBackgroundUiPath(file.path)),
+    loadedFileCount: contextArray().filter((file) => !isBackgroundUiPath(file.path)).length,
+    truncatedFileCount: contextArray().filter((file) => !isBackgroundUiPath(file.path) && file.truncated).length,
   });
 }
 

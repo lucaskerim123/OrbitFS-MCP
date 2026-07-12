@@ -639,6 +639,15 @@ function filterVentFolder(subpath, entries, recursive) {
   return entries;
 }
 
+function isInternalUiPath(filepath = "") {
+  const normalized = normalizeRelativePath(filepath).toLowerCase();
+  const parts = normalized.split("/").filter(Boolean);
+  const name = parts.at(-1) || "";
+  return parts.includes("_system") || parts.includes("_trash")
+    || name === "file_index.json" || name === "startup-loading.json"
+    || name === "loadorder" || name === "project_rules.md";
+}
+
 function sydneyDateDDMMYYYY() {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Australia/Sydney",
@@ -1391,12 +1400,14 @@ function buildServer(authContext = {}) {
     {
       subpath: z.string().optional().describe("Relative subfolder, default root"),
       recursive: z.boolean().optional().describe("List all nested contents, not just top level"),
+      include_internal: z.boolean().optional().describe("Show internal _system/_trash/index files; default false"),
     },
-    async ({ subpath, recursive }) => {
+    async ({ subpath, recursive, include_internal }) => {
       logEvent("tool.list_files.start", { ...authContext, subpath: subpath || "", recursive: !!recursive });
       let entries = await ops.listFiles(subpath, { recursive });
       if (!recursive) entries = filterLegacyTopLevelEntries(subpath, entries);
       entries = filterVentFolder(subpath, entries, recursive);
+      if (!include_internal) entries = entries.filter((entry) => !isInternalUiPath(entry.path ?? entry.name));
       const listing = entries.map((e) => (e.type === "dir" ? "[DIR] " : "[FILE] ") + (e.path ?? e.name)).join("\n");
       logEvent("tool.list_files.ok", { ...authContext, subpath: subpath || "", recursive: !!recursive, count: entries.length });
       return { content: [{ type: "text", text: listing || "(empty)" }] };
@@ -1859,10 +1870,13 @@ function buildServer(authContext = {}) {
     {
       query: z.string().describe("Substring to search for"),
       subpath: z.string().optional().describe("Relative subfolder to search, default root"),
+      include_internal: z.boolean().optional().describe("Search internal _system/_trash/index files; default false"),
     },
-    async ({ query, subpath }) => {
-      logEvent("tool.search_files.start", { ...authContext, query, subpath: subpath || "" });
-      const matches = (await ops.searchFiles(query, subpath)).filter((m) => !isVentFolderPath(m.path));
+    async ({ query, subpath, include_internal }) => {
+      logEvent("tool.search_files.start", { ...authContext, query, subpath: subpath || "", includeInternal: !!include_internal });
+      const matches = (await ops.searchFiles(query, subpath))
+        .filter((m) => !isVentFolderPath(m.path))
+        .filter((m) => include_internal || !isInternalUiPath(m.path));
       logEvent("tool.search_files.ok", { ...authContext, query, matchCount: matches.length });
       const text = matches.length ? matches.map((m) => `${m.path}:${m.line}: ${m.text}`).join("\n") : "(no matches)";
       return { content: [{ type: "text", text }] };
