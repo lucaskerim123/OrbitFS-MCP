@@ -30,3 +30,8 @@ Deliberately not mapped as quick ChatGPT commands:
 - `uploadFile` - binary upload is not a good typed-text command
 - `getTrashConfig` / `setTrashConfig` - admin config, better as explicit Actions
 - `getOAuthState` - operational/admin, not a normal user command
+
+Attachment rule:
+
+- If the user wants to save/upload a binary attachment from ChatGPT and the file only exists as a ChatGPT sandbox attachment/path such as `/mnt/data/...`, do not try `uploadFile`.
+- Call `create_upload_link` instead and send the link immediately.

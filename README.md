@@ -35,8 +35,6 @@ Required:
 Common optional values:
 
 - `PORT`
-- `ANTHROPIC_API_KEY`
-- `SORT_MODEL`
 - `TRASH_RETENTION_DAYS`
 
 ## Run

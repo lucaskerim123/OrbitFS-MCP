@@ -11,7 +11,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { jwtVerify, SignJWT } from "jose";
-import Anthropic from "@anthropic-ai/sdk";
 import { mountOAuth, getOAuthState } from "./oauth.js";
 import { makeOps } from "./hive-ops.js";
 
@@ -29,14 +28,12 @@ const LEGACY_TRASH_FOLDERS = ["?? Trash"];
 //   "_system", "_sorter", "_trash", "0. Core", "1. Legal",
 //   "2. Wellbeing", "_media"
 const PROTECTED_ROOT_FOLDERS = new Set([]);
-const SORT_MODEL = process.env.SORT_MODEL || "claude-haiku-4-5-20251001";
 const DEFAULT_TRASH_RETENTION_DAYS = Number(process.env.TRASH_RETENTION_DAYS || 4);
 const TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 // Per-file cap for MCP uploads/fetches. Bumped from 10MB and made configurable
 // via UPLOAD_MAX_MB in .env. Large files can be sent in chunks (upload_file
 // append), so this is really a ceiling on total assembled size.
 const FETCH_MAX_BYTES = Number(process.env.UPLOAD_MAX_MB || 100) * 1024 * 1024;
-const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = path.join(SERVER_DIR, "logs");
 const EVENT_LOG_FILE = path.join(LOG_DIR, "master-hive-events.jsonl");
@@ -313,37 +310,95 @@ async function listFolderTree(base, depth, out) {
   return out;
 }
 
-async function classifyDestination(itemName, isDir, folders) {
-  if (!anthropic) {
-    throw new Error("ANTHROPIC_API_KEY is not configured on the Hive server, so sort_inbox can't ask the model for a destination.");
-  }
-  const prompt = [
-    `You are filing an item out of a personal file store's "${SORT_FOLDER}" staging folder into its real home.`,
-    `Item to file: "${itemName}" (${isDir ? "folder" : "file"}).`,
-    `Existing folders in the store (relative paths, top-level first):`,
-    folders.length ? folders.map((f) => `- ${f}`).join("\n") : "(store is empty, no existing folders yet)",
-    ``,
-    `Pick the single best destination folder for this item. Prefer an existing folder that clearly matches over inventing a new one. If nothing fits, propose a short, sensible new top-level (or nested, e.g. "Documents/Invoices") folder name.`,
-    `Respond with ONLY compact JSON, no prose, no markdown fences: {"destination": "<folder path, no leading/trailing slash>", "isNew": true|false, "reason": "<one short sentence>"}`,
-  ].join("\n");
-
-  const msg = await anthropic.messages.create({
-    model: SORT_MODEL,
-    max_tokens: 300,
-    messages: [{ role: "user", content: prompt }],
-  });
-  const text = msg.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error(`Sorter model returned an unparseable response: ${text.slice(0, 200)}`);
-  const parsed = JSON.parse(match[0]);
-  if (!parsed.destination || typeof parsed.destination !== "string") {
-    throw new Error("Sorter model response missing a destination");
-  }
-  return parsed;
+function sorterNorm(value = "") {
+  return String(value || "").toLowerCase().replace(/[_\-.]+/g, " ");
 }
 
-// Dry run: asks the model where each _sorter item should go, but does not
-// touch the filesystem. Callers must show this to the user and only move
+function scoreSorterFolder(folderPath, hints = [], preferredFolders = []) {
+  const text = sorterNorm(folderPath);
+  let score = 0;
+  for (const hint of hints) {
+    if (text.includes(sorterNorm(hint))) score += 10;
+  }
+  for (const preferred of preferredFolders) {
+    const normalized = sorterNorm(preferred);
+    if (text === normalized || text.startsWith(`${normalized}/`) || text.startsWith(`${normalized} `)) score += 60;
+    else if (text.includes(normalized)) score += 25;
+  }
+  return score;
+}
+
+function findSorterFolder(folders, preferredFolders = []) {
+  for (const preferred of preferredFolders) {
+    const normalized = sorterNorm(preferred);
+    const exact = folders.find((folder) => {
+      const text = sorterNorm(folder);
+      return text === normalized || text.startsWith(`${normalized}/`) || text.startsWith(`${normalized} `);
+    });
+    if (exact) return exact;
+  }
+  return null;
+}
+
+function chooseSorterDestination(folders, hints = [], preferredFolders = [], fallbackHints = []) {
+  let best = null;
+  for (const folder of folders) {
+    let score = scoreSorterFolder(folder, hints, preferredFolders);
+    if (!score && fallbackHints.length) score = scoreSorterFolder(folder, fallbackHints, preferredFolders);
+    if (!best || score > best.score) best = { folder, score };
+  }
+  if (best?.score > 0) return best.folder;
+  return findSorterFolder(folders, preferredFolders);
+}
+
+async function classifyDestination(itemName, isDir, folders) {
+  const text = sorterNorm(itemName);
+  const ext = path.extname(itemName).toLowerCase();
+  const rules = [
+    {
+      name: "Media",
+      match: () => [".mp3", ".wav", ".m4a", ".mp4", ".mov", ".avi", ".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext),
+      hints: ["media", "audio", "video", "photos", "images"],
+      preferredFolders: ["_media"],
+    },
+    {
+      name: "Wellbeing",
+      match: () => /mental|wellbeing|session|mood|sleep|vent|therapy/.test(text),
+      hints: ["wellbeing", "mental", "notes"],
+      preferredFolders: ["2. Wellbeing"],
+    },
+    {
+      name: "Legal",
+      match: () => /statement|witness|victim|police|court|hearing|avo|charge|order|affidavit|mention|adjourn/.test(text),
+      hints: ["legal", "court", "documents", "reference"],
+      preferredFolders: ["1. Legal"],
+    },
+    {
+      name: "Core",
+      match: () => !isDir && [".md", ".txt", ".doc", ".docx", ".pdf"].includes(ext),
+      hints: ["documents", "notes", "imports"],
+      preferredFolders: ["0. Core"],
+    },
+  ];
+
+  for (const rule of rules) {
+    if (!rule.match()) continue;
+    const destination = chooseSorterDestination(folders, rule.hints, rule.preferredFolders, ["imports", "needs review"]);
+    if (destination) {
+      return { destination, isNew: false, reason: `Rule matched: ${rule.name}` };
+    }
+  }
+
+  const fallback = chooseSorterDestination(folders, ["imports", "notes"], ["0. Core"], ["needs review"]);
+  return {
+    destination: fallback || "0. Core",
+    isNew: !fallback,
+    reason: fallback ? "Fallback matched: Core/Documents" : "Fallback created: 0. Core",
+  };
+}
+
+// Dry run: applies deterministic sorter rules to each _sorter item, but does
+// not touch the filesystem. Callers must show this to the user and only move
 // files via applySortMoves() once the destinations are confirmed.
 async function planSortInbox(authContext = {}) {
   let entries;
@@ -429,6 +484,9 @@ function assertMutablePath(relPath = "", action = "modify") {
 
 const FILE_VIEW_TOKEN_TTL = "15m";
 const FILE_VIEW_TOKEN_TTL_MINUTES = 15;
+const UPLOAD_LINK_TOKEN_TTL = "15m";
+const UPLOAD_LINK_TOKEN_TTL_MINUTES = 15;
+const uploadTokens = new Map();
 
 // Short-lived, single-file-scoped tokens for "open this in a browser tab"
 // links - narrower than the HIVE_API_KEY bearer token (one path, expires
@@ -454,6 +512,255 @@ async function buildFileWebLink(filepath) {
   const token = await signFileViewToken(normalized);
   const url = `${PUBLIC_BASE_URL}/open?path=${encodeURIComponent(normalized)}&token=${token}`;
   return { url, expiresInMinutes: FILE_VIEW_TOKEN_TTL_MINUTES };
+}
+
+function pruneUploadTokens() {
+  const now = Date.now();
+  for (const [jti, state] of uploadTokens.entries()) {
+    if (!state || state.expiresAt <= now || state.usedAt) uploadTokens.delete(jti);
+  }
+}
+
+function sanitizeUploadFilename(filename = "") {
+  const base = path.basename(String(filename || "").replace(/\\/g, "/")).trim();
+  if (!base || base === "." || base === "..") throw new Error("Uploaded file must have a valid filename");
+  return base.replace(/[\x00-\x1f]/g, "_");
+}
+
+async function signUploadLinkToken(destination = SORT_FOLDER) {
+  const relPath = normalizeRelativePath(destination || SORT_FOLDER) || SORT_FOLDER;
+  const jti = crypto.randomBytes(12).toString("hex");
+  const expiresAt = Date.now() + (UPLOAD_LINK_TOKEN_TTL_MINUTES * 60 * 1000);
+  uploadTokens.set(jti, { destination: relPath, expiresAt, usedAt: null });
+  return new SignJWT({ purpose: "upload_link", destination: relPath, jti })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setIssuer(PUBLIC_BASE_URL)
+    .setAudience(`${PUBLIC_BASE_URL}/api/upload`)
+    .setExpirationTime(UPLOAD_LINK_TOKEN_TTL)
+    .sign(SECRET_KEY);
+}
+
+async function buildUploadLink(destination = SORT_FOLDER) {
+  pruneUploadTokens();
+  const token = await signUploadLinkToken(destination);
+  const url = new URL("/upload", PUBLIC_BASE_URL);
+  url.searchParams.set("token", token);
+  return {
+    url: url.toString(),
+    expiresInMinutes: UPLOAD_LINK_TOKEN_TTL_MINUTES,
+    destination: normalizeRelativePath(destination || SORT_FOLDER) || SORT_FOLDER,
+  };
+}
+
+async function verifyUploadLinkToken(token, { consume = false } = {}) {
+  pruneUploadTokens();
+  const { payload } = await jwtVerify(String(token), SECRET_KEY, {
+    issuer: PUBLIC_BASE_URL,
+    audience: `${PUBLIC_BASE_URL}/api/upload`,
+  });
+  if (payload.purpose !== "upload_link" || !payload.jti) throw new Error("Invalid upload token");
+  const state = uploadTokens.get(payload.jti);
+  if (!state) throw new Error("Upload token is invalid or has expired");
+  if (state.usedAt) throw new Error("Upload token has already been used");
+  if (state.expiresAt <= Date.now()) {
+    uploadTokens.delete(payload.jti);
+    throw new Error("Upload token has expired");
+  }
+  if (state.destination !== payload.destination) throw new Error("Upload token destination mismatch");
+  if (consume) {
+    state.usedAt = Date.now();
+    uploadTokens.set(payload.jti, state);
+  }
+  return { destination: state.destination, jti: payload.jti, expiresAt: state.expiresAt };
+}
+
+function parseMultipartFile(req) {
+  const contentType = String(req.headers["content-type"] || "");
+  const match = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  if (!match) throw new Error("multipart/form-data boundary is required");
+  const boundary = match[1] || match[2];
+  const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
+  const boundaryMarker = Buffer.from(`--${boundary}`);
+  const headerSeparator = Buffer.from("\r\n\r\n");
+  let cursor = body.indexOf(boundaryMarker);
+
+  while (cursor !== -1) {
+    const partStart = cursor + boundaryMarker.length;
+    if (body.slice(partStart, partStart + 2).equals(Buffer.from("--"))) break;
+    const dataStart = body.indexOf(headerSeparator, partStart);
+    if (dataStart === -1) break;
+    const rawHeaders = body.slice(partStart, dataStart).toString("utf8").trim();
+    const disposition = rawHeaders.split(/\r?\n/).find((line) => /^content-disposition:/i.test(line));
+    const filenameMatch = disposition?.match(/filename="([^"]*)"/i);
+    const nextBoundary = body.indexOf(Buffer.from(`\r\n--${boundary}`), dataStart + headerSeparator.length);
+    if (nextBoundary === -1) break;
+    const content = body.slice(dataStart + headerSeparator.length, nextBoundary);
+    if (filenameMatch && filenameMatch[1] !== "") {
+      return {
+        filename: sanitizeUploadFilename(filenameMatch[1]),
+        buffer: content,
+      };
+    }
+    cursor = nextBoundary + 2;
+  }
+
+  throw new Error("No uploaded file was found in the multipart form data");
+}
+
+function renderUploadPage(uploadUrl) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hive Upload</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef4ff;
+      --panel: rgba(255,255,255,0.94);
+      --border: #c8d7f2;
+      --text: #17304f;
+      --muted: #5e7494;
+      --accent: #1f6feb;
+      --accent-strong: #0b4db6;
+      --ok: #0f9d58;
+      --error: #c62828;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top, rgba(31,111,235,0.18), transparent 40%),
+        linear-gradient(180deg, #f7faff 0%, var(--bg) 100%);
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+    .card {
+      width: min(100%, 520px);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 24px 60px rgba(31, 61, 110, 0.14);
+      backdrop-filter: blur(10px);
+    }
+    h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
+    p { margin: 0 0 18px; color: var(--muted); line-height: 1.5; }
+    label {
+      display: block;
+      margin: 16px 0 8px;
+      font-weight: 600;
+    }
+    input[type="file"] {
+      width: 100%;
+      padding: 14px;
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+      background: white;
+    }
+    button {
+      width: 100%;
+      margin-top: 18px;
+      border: 0;
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      color: white;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    progress {
+      width: 100%;
+      height: 14px;
+      margin-top: 16px;
+    }
+    .status {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #f5f8fe;
+      color: var(--text);
+      word-break: break-word;
+    }
+    .status.ok { background: #edf8f1; color: var(--ok); }
+    .status.error { background: #fdeeee; color: var(--error); }
+    .small { font-size: 0.92rem; color: var(--muted); margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Upload to Hive</h1>
+    <p>Select one file and upload it directly into <code>_sorter</code>. Links expire after 15 minutes and can only be used once.</p>
+    <form id="upload-form">
+      <label for="file">Choose file</label>
+      <input id="file" name="file" type="file" required>
+      <button id="submit" type="submit">Upload File</button>
+      <progress id="progress" value="0" max="100" hidden></progress>
+      <div id="status" class="status" hidden></div>
+      <div class="small">Maximum file size: 100MB.</div>
+    </form>
+  </main>
+  <script>
+    const form = document.getElementById("upload-form");
+    const fileInput = document.getElementById("file");
+    const submit = document.getElementById("submit");
+    const progress = document.getElementById("progress");
+    const status = document.getElementById("status");
+    function setStatus(message, kind) {
+      status.hidden = false;
+      status.className = "status" + (kind ? " " + kind : "");
+      status.textContent = message;
+    }
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) {
+        setStatus("Choose a file first.", "error");
+        return;
+      }
+      submit.disabled = true;
+      progress.hidden = false;
+      progress.value = 0;
+      setStatus("Uploading...", "");
+      const data = new FormData();
+      data.append("file", file, file.name);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", ${JSON.stringify(uploadUrl)});
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) progress.value = Math.round((e.loaded / e.total) * 100);
+      });
+      xhr.onload = () => {
+        submit.disabled = false;
+        try {
+          const parsed = JSON.parse(xhr.responseText || "{}");
+          if (xhr.status >= 200 && xhr.status < 300 && parsed.success) {
+            progress.value = 100;
+            setStatus("Saved to " + parsed.filepath, "ok");
+            form.reset();
+            return;
+          }
+          setStatus(parsed.error || "Upload failed.", "error");
+        } catch {
+          setStatus("Upload failed.", "error");
+        }
+      };
+      xhr.onerror = () => {
+        submit.disabled = false;
+        setStatus("Network error while uploading.", "error");
+      };
+      xhr.send(data);
+    });
+  </script>
+</body>
+</html>`;
 }
 
 function trashEntryPrefix() {
@@ -755,7 +1062,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "upload_file",
-    "Upload a binary file (image, PDF, docx, audio, video, etc.) to the OrbitFS store. Use this instead of write_file for anything that isn't plain text. Content must be base64-encoded - this server has no access to any client-side or sandbox filesystem (e.g. a ChatGPT '/mnt/data/...' attachment path), so a file path or attachment reference is NOT a valid value for contentBase64; you must read the file yourself and encode it before calling this tool. If you were only given a file reference/attachment and have no way to read and base64-encode it yourself in this context, either try fetch_url_to_file with a URL you CAN fetch, or tell the user to use the web panel's upload button instead - do not guess or fabricate base64 content. For files too big for one call, send them in pieces: first call with append=false (or omitted), then repeat with append=true using the SAME filepath until done - e.g. base64-encode in your sandbox, print it in chunks, and pass each printed chunk through. Verify the final size/sha256 with stat_file. If the user names a destination folder, pass the full path; a bare filename goes to the _sorter inbox.",
+    "Upload a binary file (image, PDF, docx, audio, video, etc.) to the OrbitFS store. Use this instead of write_file for anything that isn't plain text. Content must be base64-encoded. The server cannot read client-side or sandbox file paths such as ChatGPT or Claude attachment paths like '/mnt/data/file.pdf', so those paths are NOT valid values for contentBase64; the model must read the file bytes and base64-encode them before calling this tool. If base64 encoding is unavailable in this context, use create_upload_link instead. If a real downloadable URL exists that the server can fetch directly, use fetch_url_to_file instead. For files too big for one call, send them in pieces: first call with append=false (or omitted), then repeat with append=true using the SAME filepath until done. Max assembled size is 100MB. Verify the final size/sha256 with stat_file. If the user names a destination folder, pass the full path; a bare filename goes to the _sorter inbox.",
     {
       filepath: z.string().describe("Relative path for the upload; bare filenames (no folder) go to the _sorter inbox. Use the same value for every chunk of one file."),
       contentBase64: z.string().describe("File content (or the next chunk of it), base64-encoded"),
@@ -877,6 +1184,22 @@ function buildServer(authContext = {}) {
   );
 
   server.tool(
+    "create_upload_link",
+    "Create a short-lived, single-use upload link for browser-based multipart uploads into the Hive. Use this when you cannot base64-encode the file for upload_file. The link expires after 15 minutes and uploads into the _sorter inbox by default.",
+    {},
+    async () => {
+      logEvent("tool.create_upload_link.start", authContext);
+      const { url, expiresInMinutes, destination } = await buildUploadLink(SORT_FOLDER);
+      logEvent("tool.create_upload_link.ok", { ...authContext, destination });
+      return {
+        content: [
+          { type: "text", text: `Upload link (single-use, expires in ${expiresInMinutes} minutes): ${url}` },
+        ],
+      };
+    }
+  );
+
+  server.tool(
     "search_files",
     "Search file contents for a substring within the Master Hive store",
     {
@@ -894,7 +1217,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "fetch_url_to_file",
-    "Download a URL and save it into the Master Hive store, binary-safe (docx, PDF, images, audio all fine). This is the way to bring in files from a sandbox or the web when you can't pass base64 to upload_file: generate a temporary download link for the file, then call this with that URL. Bare filenames with no folder go to the _sorter inbox.",
+    "Download a URL and save it into the Hive store, binary-safe (docx, PDF, images, audio all fine). Use this when a real downloadable URL exists that the Hive server itself can access directly. If you only have a ChatGPT or Claude sandbox path like '/mnt/data/file.pdf', the server cannot read that path; use upload_file with base64 content or create_upload_link instead. Bare filenames with no folder go to the _sorter inbox.",
     {
       url: z.string().url().describe("URL to fetch"),
       filepath: z.string().describe("Relative path to save the content to (bare filenames go to the _sorter inbox)"),
@@ -1224,6 +1547,7 @@ app.get("/api/ping", (req, res) => res.json({ ok: true, name: "orbitfs" }));
 
 app.use("/api", async (req, res, next) => {
   if (req.path === "/ping") return next();
+  if (req.path === "/upload" && req.query.token) return next();
   const ok = await checkAuth(req);
   if (!ok) return res.status(401).json({ error: "Unauthorized" });
   next();
@@ -1387,16 +1711,60 @@ app.get("/open", async (req, res) => {
   }
 });
 
+app.get("/upload", async (req, res) => {
+  try {
+    const token = req.query.token;
+    if (!token) return res.status(401).send("Missing token. Ask for a fresh upload link.");
+    await verifyUploadLinkToken(token, { consume: false });
+    const uploadUrl = new URL("/api/upload", PUBLIC_BASE_URL);
+    uploadUrl.searchParams.set("token", String(token));
+    res.type("html").send(renderUploadPage(uploadUrl.toString()));
+  } catch (err) {
+    logError("open.upload.failed", err, requestContext(req));
+    res.status(401).send("This upload link is invalid, already used, or has expired. Ask for a fresh one.");
+  }
+});
+
 // Raw binary body, path given as a query param (browsers set Content-Type to
 // the file's own mime type on upload, so accept any content-type here).
-app.post("/api/upload", express.raw({ type: () => true, limit: "2gb" }), async (req, res) => {
+app.post("/api/upload", express.raw({ type: () => true, limit: FETCH_MAX_BYTES }), async (req, res) => {
   try {
-    await ops.writeFile(req.query.path, req.body);
-    logEvent("file.change.upload", { ...requestContext(req), source: "rest_api", path: req.query.path, bytes: req.body.length });
-    res.json({ ok: true, bytes: req.body.length });
+    const contentType = String(req.headers["content-type"] || "").toLowerCase();
+    if (contentType.startsWith("multipart/form-data")) {
+      const token = req.query.token;
+      if (!token) return res.status(401).json({ error: "Unauthorized" });
+      const { filename, buffer } = parseMultipartFile(req);
+      if (buffer.length > FETCH_MAX_BYTES) {
+        throw new Error(`File too large (${buffer.length} bytes, over the ${FETCH_MAX_BYTES}-byte limit)`);
+      }
+      const uploadAuth = await verifyUploadLinkToken(token, { consume: true });
+      const filepath = `${uploadAuth.destination}/${filename}`;
+      await ops.writeFile(filepath, buffer);
+      logEvent("file.change.upload", {
+        ...requestContext(req),
+        source: "rest_api_upload_link",
+        path: filepath,
+        filename,
+        bytes: buffer.length,
+      });
+      return res.json({ success: true, filepath, filename, size: buffer.length });
+    }
+
+    const rawPath = req.query.path;
+    if (!req.authContext) return res.status(401).json({ error: "Unauthorized" });
+    const filepath = normalizeRelativePath(rawPath);
+    if (!filepath) throw new Error("path is required");
+    const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
+    if (bytes.length > FETCH_MAX_BYTES) {
+      throw new Error(`File too large (${bytes.length} bytes, over the ${FETCH_MAX_BYTES}-byte limit)`);
+    }
+    await ops.writeFile(filepath, bytes);
+    logEvent("file.change.upload", { ...requestContext(req), source: "rest_api", path: filepath, bytes: bytes.length });
+    res.json({ ok: true, success: true, filepath, filename: path.basename(filepath), size: bytes.length, bytes: bytes.length });
   } catch (err) {
     logError("api.upload.failed", err, { ...requestContext(req), path: req.query.path });
-    res.status(400).json({ error: err.message });
+    const status = /too large/i.test(err.message) ? 413 : (err.code === "ERR_JOSE_GENERIC" || /token|Unauthorized/i.test(err.message) ? 401 : 400);
+    res.status(status).json({ error: err.message });
   }
 });
 

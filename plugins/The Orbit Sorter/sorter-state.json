@@ -1,22 +1,11 @@
 {
   "status": "preview",
   "safeMode": true,
-  "startedAt": "2026-07-12T10:40:14.054Z",
-  "items": [
-    {
-      "id": "X3NvcnRlci9zb3J0ZXJfZm9sZGVyX2luZGV4X3Rvb2xfb3B0aW9ucy5tZA",
-      "source": "_sorter/sorter_folder_index_tool_options.md",
-      "name": "sorter_folder_index_tool_options.md",
-      "classification": "Needs Review",
-      "reason": "Meaning matched: Needs Review",
-      "selectedDestination": "1. Legal/0. Intake - Needs Review/sorter_folder_index_tool_options.md",
-      "approved": false,
-      "status": "preview"
-    }
-  ],
+  "startedAt": "2026-07-12T11:18:05.216Z",
+  "items": [],
   "index": {
     "root": "F:\\OrbitFS Project\\The Orbit FS",
-    "builtAt": "2026-07-12T10:40:14.053Z",
+    "builtAt": "2026-07-12T11:18:05.215Z",
     "folders": [
       {
         "path": "0. Core",
@@ -254,5 +243,5 @@
       }
     ]
   },
-  "lastRun": "2026-07-12T10:40:14.054Z"
+  "lastRun": "2026-07-12T11:18:05.216Z"
 }

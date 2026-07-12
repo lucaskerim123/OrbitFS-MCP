@@ -35,6 +35,7 @@ General rules:
 5. Never guess destructive targets or silent write operations.
 6. If a command is invalid or ambiguous, explain the expected syntax briefly and do not improvise a different command.
 7. When a command trigger matches, prefer the Action call over ordinary chat reasoning.
+8. When the user wants to upload/save an attached binary file from ChatGPT, and the file is only available as a ChatGPT sandbox attachment/path (for example `/mnt/data/...`), do not try to pass that path into `upload_file`. Immediately use `create_upload_link` instead.
 
 Command map:
 
@@ -165,4 +166,5 @@ Safety:
 - For admin commands, ask for explicit confirmation before calling the Action.
 - Prefer `/trash` over any hard-delete workflow.
 - Never call `emptyTrash` or `applySortInbox` without user confirmation.
+- For ChatGPT file attachments, prefer `create_upload_link` automatically unless you truly have the file bytes available for base64 encoding.
 ```

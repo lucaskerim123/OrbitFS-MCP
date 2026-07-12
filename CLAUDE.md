@@ -13,7 +13,7 @@ two prod servers against the same HIVE_ROOT, don't commit `.env`/tokens/logs).
 |------|---------|-----|------|-----------|
 | MCP server (this repo) | **OrbitFSMcpServer** | F:\OrbitFS Project\orbitfs-mcp | 3939 | Manual |
 | Web panel (orbitfs-panel repo) | **OrbitFSPanel** | F:\OrbitFS Project\orbitfs-panel | 4000 | Automatic |
-| Addon sorter | **OrbitFSSorter** | F:\OrbitFS Project\orbitfs-mcp\plugins\The Orbit Sorter | 4055 (auto) | Manual |
+| Addon sorter | **OrbitFSSorter** | F:\OrbitFS Project\orbitfs-panel\plugins\OrbitFS Sorter | 4055 (auto) | Manual |
 | Cloudflare tunnel | **OrbitFSTunnel** | C:\cloudflared | — | Automatic |
 
 - Restart any of them via the Windows service, e.g.
@@ -34,8 +34,8 @@ two prod servers against the same HIVE_ROOT, don't commit `.env`/tokens/logs).
 - MCP server: all config from `.env` (HIVE_ROOT, PORT, PUBLIC_BASE_URL,
   HIVE_API_KEY, SESSION_SECRET, UPLOAD_MAX_MB, service-name overrides for the
   panel/tunnel it monitors — defaults are the OrbitFS* names).
-- Sorter: `config.json` (port, hiveRoot, folders). No API key (Cloudflare
-  Access strips the Authorization header, which caused 401s via the domain).
+- Sorter: its own `.env` plus legacy `config.json` fallback (port, hive root,
+  folders, API key).
 - Panel: `.env` (PANEL_PORT, HIVE_URL/KEY, all *_SERVICE_NAME, HIVE_SERVER_DIR,
   SORTER_DIR, CLOUDFLARED_*). The panel proxies the sorter at `/api/sorter/*`
   and reads `<SORTER_DIR>/.sorter-port` to find its live port.

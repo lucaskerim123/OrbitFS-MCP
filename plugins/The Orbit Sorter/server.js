@@ -2,11 +2,13 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import { startSorter, confirmSorter, buildFolderIndex, HIVE_ROOT } from './sorter-core.js';
 
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(APP_DIR, '.env') });
 const config = JSON.parse(await fs.readFile(path.join(APP_DIR, 'config.json'), 'utf8'));
-const PORT = Number(process.env.PORT || config.port || 4055);
+const PORT = Number(process.env.SORTER_PORT || process.env.PORT || config.port || 4055);
 const API_KEY = process.env.HIVE_API_KEY || config.apiKey;
 const PUBLIC_DIR = path.join(APP_DIR, 'public');
 const STATE_FILE = path.join(APP_DIR, 'sorter-state.json');
