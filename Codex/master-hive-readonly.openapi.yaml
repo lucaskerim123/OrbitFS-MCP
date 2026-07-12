@@ -261,7 +261,7 @@ paths:
     post:
       operationId: startupFirestorm
       summary: Load hardcoded Project FireStorm startup context.
-      description: Equivalent to `/startup <project> <low|med|high>`. Read-only. Loads FireStorm startup files, the full startup rule set, `_system/Index/file_index.json` when present, and relevant folder listings while excluding Archive folders from startup scope unless explicitly requested.
+      description: Equivalent to `/startup <project> <low|med|high>`. Read-only. Loads FireStorm startup files, the level-appropriate rule set, `_system/Index/file_index.json` when present, recursively discovers current readable project files, and loads bounded file contents into context for med/high while excluding Archive and Pure Vent Mode.
       parameters:
         - $ref: "#/components/parameters/HiveFlowHeader"
       requestBody:
@@ -320,6 +320,5 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FileWebLink"
-
 
 
