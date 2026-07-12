@@ -1,36 +1,68 @@
 # CLAUDE.md
 
-This repo is the Hive MCP server only. The web panel and sync engine live in a
-separate repo, `the-master-brain` (`C:\Users\Lucas\Desktop\the-master-brain`) —
-don't look for panel UI code here. See [README.md](README.md) for the tool/API
-surface and [LIVE_SERVER_STRUCTURE.md](LIVE_SERVER_STRUCTURE.md) for safety rules
-(don't run two prod servers against the same Hive root, don't commit `.env`/tokens/logs, etc).
+This repo is the **OrbitFS MCP server** only (internal MCP name `orbitfs`; was
+"Master Hive"). The web panel and sync engine live in a separate repo,
+**`orbitfs-panel`** (`F:\orbitfs-panel`) — don't look for panel UI code here.
+See [README.md](README.md) for the tool/API surface and
+[LIVE_SERVER_STRUCTURE.md](LIVE_SERVER_STRUCTURE.md) for safety rules (don't run
+two prod servers against the same HIVE_ROOT, don't commit `.env`/tokens/logs).
 
-## Runtime topology (Windows)
+## Runtime topology (Windows) — all NSSM services (renamed 2026-07-12)
 
-- Hive server (this repo): plain `node server.js` process, not a Windows service.
-  Started/watched by [start-hive.ps1](start-hive.ps1). Listens on `PORT` from `.env`
-  (currently 3939) — liveness check: `GET /api/ping`.
-  Restart: kill the matching `node.exe` process and rerun `start-hive.ps1` (or
-  `node server.js` directly). Logs: `logs/master-hive-events.jsonl` (and
-  `-errors.jsonl` on failure).
-- cloudflared tunnel: also a plain process (`Get-Process cloudflared`), not a service.
-- Web panel (`the-master-brain`): runs as an NSSM Windows service, `MasterBrainPanel`,
-  on port 4000. Restart with `Restart-Service -Name MasterBrainPanel -Force`.
-  **Known bug:** NSSM's stop acknowledges without cleanly killing the headless Node
-  child, so the panel's own Stop/Restart buttons are unreliable — restart the
-  Windows service directly instead.
+| Role | Service | Dir | Port | StartType |
+|------|---------|-----|------|-----------|
+| MCP server (this repo) | **OrbitFSMcpServer** | F:\orbitfs-mcp | 3939 | Manual |
+| Web panel (orbitfs-panel repo) | **OrbitFSPanel** | F:\orbitfs-panel | 4000 | Automatic |
+| Addon sorter | **OrbitFSSorter** | F:\orbitfs-mcp\hive-addon-sorter | 4055 (auto) | Manual |
+| Cloudflare tunnel | **OrbitFSTunnel** | C:\cloudflared | — | Automatic |
+
+- Restart any of them via the Windows service, e.g.
+  `Restart-Service OrbitFSMcpServer -Force`. Liveness: `GET /api/ping` returns
+  `{"ok":true,"name":"orbitfs"}`.
+- **NSSM child-kill bug:** NSSM's stop acknowledges without cleanly killing the
+  headless Node child, so restarts can race a still-dying process. If a restart
+  fails, check for a lingering `node server.js` (or a shell/watcher sitting in
+  the dir) before retrying.
+- Boot policy: only **OrbitFSPanel** + **OrbitFSTunnel** auto-start. The MCP
+  server and sorter are Manual — started on demand from the panel's System tab.
+- The cloudflared tunnel is **remote-managed** (routes live in the Cloudflare
+  dashboard); a local `config.yml` ingress is ignored. Do NOT have any service
+  rewrite it or `taskkill` cloudflared — that fights the OrbitFSTunnel service.
+
+## Everything runs off config
+
+- MCP server: all config from `.env` (HIVE_ROOT, PORT, PUBLIC_BASE_URL,
+  HIVE_API_KEY, SESSION_SECRET, UPLOAD_MAX_MB, service-name overrides for the
+  panel/tunnel it monitors — defaults are the OrbitFS* names).
+- Sorter: `config.json` (port, hiveRoot, folders). No API key (Cloudflare
+  Access strips the Authorization header, which caused 401s via the domain).
+- Panel: `.env` (PANEL_PORT, HIVE_URL/KEY, all *_SERVICE_NAME, HIVE_SERVER_DIR,
+  SORTER_DIR, CLOUDFLARED_*). The panel proxies the sorter at `/api/sorter/*`
+  and reads `<SORTER_DIR>/.sorter-port` to find its live port.
+
+## Kept names (NOT renamed in the OrbitFS rebrand)
+
+- Project name **"FireStorm"** and the data folder **"The Master Hive"**
+  (`HIVE_ROOT`) stay as-is.
+- Public domains stay: `hive.` / `brain.` / `sorter.incendiarynetworks.cc`.
+- The cloudflared tunnel's internal name is still `master-hive` (CF-side id tied
+  to the tunnel UUID/credentials).
 
 ## Key files
 
 - `hive-ops.js` — shared file-op logic used by both MCP tools and REST routes in
-  `server.js`: enforces that paths can't escape `HIVE_ROOT` (`safeResolve`) and
-  detects UTF-16/UTF-8 BOMs so files saved by other editors round-trip correctly.
+  `server.js`: enforces paths can't escape `HIVE_ROOT` (`safeResolve`), detects
+  UTF-16/UTF-8 BOMs, and `appendFile` backs chunked uploads.
+- File-writing tools (`upload_file`, `write_file`, `fetch_url_to_file`) default a
+  bare filename (no folder) into `_sorter`; an explicit folder path is honored.
+  `upload_file` supports chunked base64 via `append=true`.
 
 ## PowerShell from the Bash tool
 
 Bare `powershell`/`powershell.exe` is not reliable here — invoke via full path:
-`/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command "..."`
+`/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command "..."`.
+Never use PowerShell redirect syntax (`*>`) inside a bash command — bash
+glob-expands the `*`. Use `2>/dev/null` / `| Out-Null` inside the PS string.
 
 ## Auth model
 

@@ -49,10 +49,11 @@ npm start
 For local dev, `node server.js` also works.
 
 Setting up on a brand new machine (fresh VPS, etc.)? Copy `.env.example` to
-`.env` and fill in the values, or use `orbitfs`'s
-`deploy/Install-BaseStructure.ps1`, which creates the `HIVE_ROOT` folder
-skeleton, generates `.env` for this repo, and runs `npm install` in one
-step. Full walkthrough: `orbitfs/GETTING_STARTED.md`.
+`.env` and fill in the values, or use `orbitfs-panel`'s
+`deploy/Install-OrbitFS.ps1`, which asks where you want everything
+installed, creates the `HIVE_ROOT` folder skeleton there, generates `.env`
+for this repo, and runs `npm install` in one step. Full walkthrough:
+`orbitfs-panel/GETTING_STARTED.md`.
 
 ## API summary
 

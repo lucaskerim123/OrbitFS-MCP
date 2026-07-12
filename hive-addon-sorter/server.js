@@ -2,7 +2,6 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { exec } from 'node:child_process';
 import { startSorter, confirmSorter, buildFolderIndex, HIVE_ROOT } from './sorter-core.js';
 
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -135,28 +134,11 @@ http.createServer(async (req, res) => {
     return send(res, 500, { error: err.message });
   }
 }).listen(ACTUAL_PORT, async () => {
-  console.log(`Hive sorter panel running on http://localhost:${ACTUAL_PORT}`);
+  console.log(`Orbit Sorter running on http://localhost:${ACTUAL_PORT}`);
+  // Publish the chosen port so the panel proxy can discover it. Tunnel routing
+  // is handled by the OrbitFSTunnel service + Cloudflare dashboard (the tunnel
+  // is remote-managed, so a local config.yml is ignored) - the sorter must NOT
+  // rewrite cloudflared config or kill the tunnel process.
   await fs.writeFile(path.join(APP_DIR, '.sorter-port'), String(ACTUAL_PORT), 'utf8').catch(() => {});
-
-  // Update cloudflared config and restart
-  const cloudflaredConfig = `tunnel: 77da9376-aa43-4d46-a12c-5b4e40b461ec
-credentials-file: C:\\Users\\Lucas\\.cloudflared\\77da9376-aa43-4d46-a12c-5b4e40b461ec.json
-
-ingress:
-  - hostname: sorter.incendiarynetworks.cc
-    service: http://localhost:${ACTUAL_PORT}
-  - hostname: hive.incendiarynetworks.cc
-    service: http://localhost:3939
-  - service: http_status:404
-`;
-  const existing = await fs.readFile('C:\\Users\\Lucas\\.cloudflared\\config.yml', 'utf8').catch(() => '');
-  if (existing !== cloudflaredConfig) {
-    await fs.writeFile('C:\\Users\\Lucas\\.cloudflared\\config.yml', cloudflaredConfig, 'utf8').catch(e => console.warn('Failed to update cloudflared config:', e.message));
-    // exec returns a ChildProcess (not a promise) - errors arrive via the callback
-    exec('taskkill /F /IM cloudflared.exe & timeout /t 2 & start "" cloudflared tunnel run master-hive', { windowsHide: true }, (err) => {
-      if (err) console.warn('cloudflared restart failed:', err.message);
-    });
-  }
-
   console.log('Commands: /startsorter /stopsorter /confirmsorter');
 });
