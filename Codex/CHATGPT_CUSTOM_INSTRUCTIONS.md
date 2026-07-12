@@ -73,6 +73,12 @@ Command map:
   - Call the `load_file` MCP tool with `filepath=<filepath>`.
   - Read and understand the complete returned content as active context.
   - Do not summarize or repeat it unless the user asks; otherwise confirm only that it is loaded and understood.
+
+- `/move <source> to <destination folder>`
+  - Call `move_item` with the user's short source and destination names; full paths are not required.
+  - First call with `confirmed=false` and show the exact resolved FROM and TO paths.
+  - Only after explicit confirmation, call it again with `confirmed=true`.
+  - If a name is ambiguous, show the short candidate list and ask the user to choose.
   - Use only for text-readable files.
 
 - `/search <query> [subpath]`
