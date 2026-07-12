@@ -1071,11 +1071,18 @@ function isMandatoryStartupFile(filepath) {
   const normalized = normalizeRelativePath(filepath).toLowerCase();
   const parts = normalized.split("/");
   const basename = parts.at(-1) || "";
-  const inLogsOrProfiles = parts.slice(0, -1).some((part) => /(^|\s)(logs?|profiles?)(\s|$)/i.test(part));
-  const namedMentalHealthProfile = /mental[\s_-]*health/.test(normalized)
-    && /profile/.test(normalized)
-    && (/(^|[^a-z])luke([^a-z]|$)/.test(normalized) || /(^|[^a-z])laura([^a-z]|$)/.test(normalized));
-  return inLogsOrProfiles || namedMentalHealthProfile || basename === "core.docx";
+  const inMasterLogs = normalized.startsWith("0. core/master logs/");
+  const isProfilesQuickView = /^mental[\s_-]*health[\s_-]*profiles[\s_-]*core\.docx$/.test(basename);
+  const inMasterProfiles = parts.slice(0, -1).some((part) => part === "master profiles");
+  const isLukeOrLaura = /(^|[^a-z])luke([^a-z]|$)/.test(basename) || /(^|[^a-z])laura([^a-z]|$)/.test(basename);
+  return inMasterLogs || isProfilesQuickView || (inMasterProfiles && isLukeOrLaura);
+}
+
+function shouldDeferStartupFile(filepath) {
+  const normalized = normalizeRelativePath(filepath).toLowerCase();
+  const parts = normalized.split("/");
+  const inMasterProfiles = parts.slice(0, -1).some((part) => part === "master profiles");
+  return inMasterProfiles && !isMandatoryStartupFile(filepath);
 }
 
 async function readStartupFile(filepath) {
@@ -1110,6 +1117,7 @@ async function discoverStartupContextFiles(folders, alreadyLoaded, fileIndexText
       const filepath = normalizeRelativePath(entry.path);
       if (!filepath || seen.has(filepath) || isArchivePath(filepath) || isVentFolderPath(filepath)) continue;
       if (!isStartupReadableFile(filepath)) continue;
+      if (shouldDeferStartupFile(filepath)) continue;
       seen.add(filepath);
       discovered.push(filepath);
     }
@@ -1318,6 +1326,28 @@ function buildServer(authContext = {}) {
       const data = await ops.readFile(filepath);
       logEvent("tool.read_file.ok", { ...authContext, filepath, chars: data.length });
       return { content: [{ type: "text", text: data }] };
+    }
+  );
+
+  server.tool(
+    "load_file",
+    "Fully load and understand one Master Hive text or DOCX file. Triggered by `/loadfile <filepath>`. Returns the complete extracted content without startup truncation. Read the entire returned file as active context; do not merely list or preview it, and do not summarize it unless the user asks.",
+    { filepath: z.string().describe("Relative path to the file that must be fully loaded") },
+    async ({ filepath }) => {
+      const normalized = normalizeRelativePath(filepath);
+      if (!normalized) throw new Error("filepath is required");
+      if (!isStartupReadableFile(normalized)) {
+        throw new Error("load_file supports readable text files and DOCX files. Use open_file_web for binary media or PDFs.");
+      }
+      logEvent("tool.load_file.start", { ...authContext, filepath: normalized });
+      const data = await readStartupFile(normalized);
+      logEvent("tool.load_file.ok", { ...authContext, filepath: normalized, chars: data.length });
+      return {
+        content: [{
+          type: "text",
+          text: `[INTERNAL FILE CONTEXT - Read and understand this entire file. Treat it as active context. Do not summarize or repeat it unless the user asks.]\n\n===== ${normalized} =====\n${data}\n\n[END FILE CONTEXT: ${normalized}]`,
+        }],
+      };
     }
   );
 
@@ -1723,7 +1753,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "startup_firestorm",
-    "Hardcoded Project FireStorm startup command. Equivalent to /startup <project> <low|med|high>. Loads the correct startup files, rule files, and relevant folder listings without making any changes.",
+    "Hardcoded Project FireStorm startup command. Equivalent to /startup <project> <low|med|high>. Always loads 0. Core/Master Logs, Mental_health_profiles_core.docx, and Luke's and Laura's Master Profile documents; other Master Profiles stay deferred for /loadfile. Also loads the correct startup files, rules, and bounded project context without making changes.",
     {
       project: z.string().describe("Project name or combined projects separated with ':'. Use Master, Court, Mental, Media, or combinations like Court:Mental"),
       load_level: z.string().optional().describe("low, med, high. Also accepts aliases: light, normal, full"),
@@ -1839,6 +1869,14 @@ function buildServer(authContext = {}) {
   );
 
   toolPrompt("read", "Read a file's contents", { filepath: z.string().describe("Relative path to the file") }, "read_file");
+
+  toolPrompt(
+    "loadfile",
+    "Fully read and understand one file as active context",
+    { filepath: z.string().describe("Relative path to the text or DOCX file") },
+    "load_file",
+    "Read the complete returned content and confirm only that the file is loaded and understood unless I ask for analysis or a summary."
+  );
 
   toolPrompt(
     "search",
@@ -2425,8 +2463,6 @@ serverHandle = app.listen(PORT, async () => {
   }, TRASH_PURGE_INTERVAL_MS).unref();
   logEvent("server.start", { port: PORT, root: ROOT, publicBaseUrl: PUBLIC_BASE_URL });
 });
-
-
 
 
 
