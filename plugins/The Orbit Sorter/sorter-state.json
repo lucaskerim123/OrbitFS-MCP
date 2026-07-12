@@ -1,11 +1,22 @@
 {
   "status": "preview",
   "safeMode": true,
-  "startedAt": "2026-07-10T20:20:51.008Z",
-  "items": [],
+  "startedAt": "2026-07-12T09:59:17.994Z",
+  "items": [
+    {
+      "id": "X3NvcnRlci9zb3J0ZXJfZm9sZGVyX2luZGV4X3Rvb2xfb3B0aW9ucy5tZA",
+      "source": "_sorter/sorter_folder_index_tool_options.md",
+      "name": "sorter_folder_index_tool_options.md",
+      "classification": "Needs Review",
+      "reason": "Meaning matched: Needs Review",
+      "selectedDestination": "1. Legal/0. Intake - Needs Review/sorter_folder_index_tool_options.md",
+      "approved": false,
+      "status": "preview"
+    }
+  ],
   "index": {
-    "root": "F:/Project Firestorm/The Master Hive",
-    "builtAt": "2026-07-10T20:20:51.007Z",
+    "root": "F:\\OrbitFS Project\\The Orbit FS",
+    "builtAt": "2026-07-12T09:59:17.993Z",
     "folders": [
       {
         "path": "0. Core",
@@ -243,5 +254,5 @@
       }
     ]
   },
-  "lastRun": "2026-07-10T20:20:51.008Z"
+  "lastRun": "2026-07-12T09:59:17.994Z"
 }

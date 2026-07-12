@@ -1,11 +1,19 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
+// Sorter now lives at orbitfs-mcp/plugins/The Orbit Sorter - HIVE_ROOT lives
+// two levels up in the repo-root .env (same one server.js loads). Parse it
+// without touching process.env: that .env also sets PORT/HIVE_API_KEY for the
+// *main* MCP server, and blindly injecting those would make the sorter fight
+// the main server for its port.
+const rootEnvPath = path.join(APP_DIR, '..', '..', '.env');
+const rootEnv = await fs.readFile(rootEnvPath, 'utf8').then(dotenv.parse).catch(() => ({}));
 const config = JSON.parse(await fs.readFile(path.join(APP_DIR, 'config.json'), 'utf8'));
 
-export const HIVE_ROOT = process.env.HIVE_ROOT || config.hiveRoot;
+export const HIVE_ROOT = process.env.HIVE_ROOT || rootEnv.HIVE_ROOT || config.hiveRoot;
 export const SORTER_DIR = config.sorterFolder || '_sorter';
 export const TRASH_DIR = config.trashFolder || '_trash';
 export const INDEX_REL = config.indexPath || '_system/Index/folder_index.json';
