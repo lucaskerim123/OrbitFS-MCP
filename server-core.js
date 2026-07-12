@@ -1380,14 +1380,16 @@ function buildServer(authContext = {}) {
     "Fully load and understand one Master Hive text or DOCX file. Triggered by `/loadfile <filepath>`. Returns the complete extracted content without startup truncation. Read the entire returned file as active context; do not merely list or preview it, and do not summarize it unless the user asks.",
     { filepath: z.string().describe("Relative path to the file that must be fully loaded") },
     async ({ filepath }) => {
-      const normalized = normalizeRelativePath(filepath);
-      if (!normalized) throw new Error("filepath is required");
+      const requested = normalizeRelativePath(filepath);
+      if (!requested) throw new Error("filepath is required");
+      const resolved = await resolveHiveReference(requested, "file");
+      const normalized = resolved.path;
       if (!isStartupReadableFile(normalized)) {
-        throw new Error("load_file supports readable text files and DOCX files. Use open_file_web for binary media or PDFs.");
+        throw new Error(`Resolved "${requested}" to "${normalized}", but load_file supports readable text files and DOCX files. Use open_file_web for binary media or PDFs.`);
       }
-      logEvent("tool.load_file.start", { ...authContext, filepath: normalized });
+      logEvent("tool.load_file.start", { ...authContext, filepath: normalized, requested, matchedBy: resolved.matchedBy });
       const data = await readStartupFile(normalized);
-      logEvent("tool.load_file.ok", { ...authContext, filepath: normalized, chars: data.length });
+      logEvent("tool.load_file.ok", { ...authContext, filepath: normalized, requested, chars: data.length });
       return {
         content: [{
           type: "text",
