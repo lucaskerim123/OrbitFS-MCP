@@ -35,3 +35,5 @@ jobs:
           git add server.js
           git commit -m "Replace startup_firestorm with startup"
           git push
+
+# Triggered after workflow registration so the push event is processed.
