@@ -7,7 +7,7 @@ import { z } from "zod";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.HIVE_ROOT;
-const WIDGET_URI = "ui://widget/orbitfs-hive-v3.html";
+const WIDGET_URI = "ui://widget/orbitfs-hive-v4.html";
 const WIDGET_HTML = await fs.readFile(path.join(SERVER_DIR, "app/widget/index.html"), "utf8");
 const CONFIG_PATH = path.join(ROOT, "_system", "Config", "startup-loading.json");
 const originalTool = McpServer.prototype.tool;
