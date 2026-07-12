@@ -102,10 +102,10 @@ Default mode.
 Actions:
 
 1. Load the full startup contract above.
-2. List only relevant top-level folders for the requested projects.
-3. Never include Archive folders in startup scope.
-4. Do not read user content, evidence, notes, letters, statements, or other private material unless the user asks for a specific target.
-5. Reply with:
+2. Recursively discover current readable files in the relevant project folders.
+3. Prioritize files referenced by `file_index.json` and load their contents into startup context within the server limits.
+4. Never include Archive folders or Pure Vent Mode in startup discovery.
+4. Reply with:
    - normalized command
    - files loaded
    - active rules
@@ -119,9 +119,8 @@ Use for deep startup.
 Actions:
 
 1. Load the full startup contract above.
-2. List relevant top-level and second-level folders for the requested projects.
-3. Never include Archive folders in startup scope unless explicitly requested.
-4. Do not read broad private/user content unless required for a concrete task.
+2. Recursively discover current readable files and load a larger bounded set of their contents into startup context.
+3. Never include Archive folders or Pure Vent Mode in startup discovery.
 5. Reply with:
    - normalized command
    - files loaded
