@@ -21,6 +21,7 @@ const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
 const SORT_FOLDER = "_sorter";
 const TRASH_FOLDER = "_trash";
+const VENT_FOLDER = "2. Wellbeing/Pure Vent Mode";
 const LEGACY_TRASH_FOLDERS = ["?? Trash"];
 // TEMPORARILY EMPTY during the top-level folder redesign - delete/move/trash
 // protection for root folders is off. Restore the real list below once the
@@ -521,6 +522,88 @@ function pruneUploadTokens() {
   }
 }
 
+// --- Pure Vent Mode: private journaling flow for the site owner only. ------
+// State lives at module scope (like uploadTokens above) because each /mcp
+// POST gets a brand-new buildServer() call (see StreamableHTTPServerTransport
+// with no sessionIdGenerator further down) - nothing inside that closure
+// survives between requests, so mode on/off and the pending draft have to
+// live out here instead.
+const ventSessions = new Map();
+
+function ventSessionKey(authContext = {}) {
+  // This server is single-tenant - a valid bearer key or OAuth JWT is already
+  // "Lucas or an authorized administrator" by construction (see the Auth
+  // model note in CLAUDE.md: the real identity gate is Cloudflare Access /
+  // the shared bearer key, not a per-user table in this server). Key by
+  // authenticated email when there is one (OAuth flow), otherwise treat all
+  // bearer-key callers as one shared session.
+  return authContext.email || "api_key";
+}
+
+function getVentSession(authContext) {
+  const key = ventSessionKey(authContext);
+  let session = ventSessions.get(key);
+  if (!session) {
+    session = { active: false, pendingDraft: null };
+    ventSessions.set(key, session);
+  }
+  return session;
+}
+
+function isVentFolderPath(relPath = "") {
+  const normalized = normalizeRelativePath(relPath);
+  return normalized === VENT_FOLDER || normalized.startsWith(`${VENT_FOLDER}/`);
+}
+
+// Excludes the Vent Mode folder from general browsing/search so it isn't
+// accidentally surfaced by a broad /startup scan or a casual list/search -
+// the folder is still reachable directly by path via style_vent_entry /
+// upload_vent_entry, and on the webpanel side is gated by the existing
+// admin-only file-permission rule (see orbitfs-panel/file-permissions.json).
+function filterVentFolder(subpath, entries, recursive) {
+  if (recursive) return entries.filter((e) => !isVentFolderPath(e.path));
+  if (normalizeRelativePath(subpath) === "2. Wellbeing") {
+    return entries.filter((e) => e.name !== "Pure Vent Mode");
+  }
+  return entries;
+}
+
+function sydneyDateDDMMYYYY() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Australia/Sydney",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  return `${get("day")}-${get("month")}-${get("year")}`;
+}
+
+const VENT_MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function monthYearFromEntryDate(entryDate) {
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(entryDate);
+  if (!match) throw new Error(`entry_date must be in DD-MM-YYYY format, got "${entryDate}"`);
+  const [, dd, mm, yyyy] = match;
+  const monthIndex = Number(mm) - 1;
+  const asDate = new Date(Number(yyyy), monthIndex, Number(dd));
+  // Round-trips through Date to reject calendar-invalid dates (e.g. 31-02-2026)
+  // instead of silently accepting them.
+  if (monthIndex < 0 || monthIndex > 11 || asDate.getMonth() !== monthIndex || asDate.getDate() !== Number(dd)) {
+    throw new Error(`entry_date "${entryDate}" is not a real calendar date`);
+  }
+  return { monthYear: `${VENT_MONTH_NAMES[monthIndex]} ${yyyy}` };
+}
+
+function sanitizeVentTitle(title = "") {
+  const cleaned = String(title || "").trim().replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ");
+  return cleaned || "Vent Entry";
+}
+
+function hashVentDraft(title, entryDate, text) {
+  return crypto.createHash("sha256").update(`${title}\n${entryDate}\n${text}`, "utf8").digest("hex");
+}
+
 function sanitizeUploadFilename(filename = "") {
   const base = path.basename(String(filename || "").replace(/\\/g, "/")).trim();
   if (!base || base === "." || base === "..") throw new Error("Uploaded file must have a valid filename");
@@ -1010,6 +1093,7 @@ function buildServer(authContext = {}) {
       logEvent("tool.list_files.start", { ...authContext, subpath: subpath || "", recursive: !!recursive });
       let entries = await ops.listFiles(subpath, { recursive });
       if (!recursive) entries = filterLegacyTopLevelEntries(subpath, entries);
+      entries = filterVentFolder(subpath, entries, recursive);
       const listing = entries.map((e) => (e.type === "dir" ? "[DIR] " : "[FILE] ") + (e.path ?? e.name)).join("\n");
       logEvent("tool.list_files.ok", { ...authContext, subpath: subpath || "", recursive: !!recursive, count: entries.length });
       return { content: [{ type: "text", text: listing || "(empty)" }] };
@@ -1073,12 +1157,21 @@ function buildServer(authContext = {}) {
         .describe("true = append this chunk to the existing file instead of creating/overwriting it"),
     },
     async ({ filepath, contentBase64, append }) => {
-      let buffer;
-      try {
-        buffer = Buffer.from(contentBase64, "base64");
-      } catch {
-        throw new Error("contentBase64 is not valid base64");
+      // Buffer.from(str, "base64") never throws - it silently decodes garbage
+      // for non-base64 input (e.g. a literal sandbox path like /mnt/data/...),
+      // which used to write a corrupt few-byte file with no error at all. Real
+      // file paths almost always contain characters outside the base64
+      // alphabet (., _, :, \), so a strict alphabet check reliably catches
+      // that mistake and hands back a working alternative instead of failing
+      // silently or with a dead-end error.
+      const cleanedB64 = String(contentBase64 || "").replace(/\s+/g, "");
+      if (!cleanedB64 || !/^[A-Za-z0-9+/]*={0,2}$/.test(cleanedB64)) {
+        const { url, expiresInMinutes } = await buildUploadLink(SORT_FOLDER);
+        throw new Error(
+          `contentBase64 is not valid base64 - it looks like a file path or attachment reference, not encoded file content, and this server cannot read that directly. Give the user this upload link so they can upload the file themselves from their own device (single-use, expires in ${expiresInMinutes} minutes): ${url}`
+        );
       }
+      const buffer = Buffer.from(cleanedB64, "base64");
       const target = await defaultToSorter(filepath);
       let existingBytes = 0;
       if (append) {
@@ -1200,6 +1293,91 @@ function buildServer(authContext = {}) {
   );
 
   server.tool(
+    "ventmode",
+    "Turn Pure Vent Mode on or off. This is a private, unfiltered journaling mode - while active, preserve the user's exact wording, tone, swearing, and intensity; don't soften, moralize, reframe, or unnecessarily polish anything; don't upload or save anything automatically; don't offer advice or commentary unless directly asked. State is stored server-side per authenticated user, not just remembered by you.",
+    { state: z.enum(["on", "off"]).describe("on = activate Pure Vent Mode, off = deactivate it") },
+    async ({ state }) => {
+      const session = getVentSession(authContext);
+      session.active = state === "on";
+      logEvent("tool.ventmode", { ...authContext, state });
+      if (state === "on") {
+        return { content: [{ type: "text", text: "🔴\nVENT MODE — ACTIVE\nChat-scoped. Private. Raw. Go." }] };
+      }
+      return { content: [{ type: "text", text: "VENT MODE — OFF" }] };
+    }
+  );
+
+  server.tool(
+    "style_vent_entry",
+    "Lock in the final draft of a Pure Vent Mode entry - required before upload_vent_entry, and the only step that determines what gets uploaded. Before calling this, YOU must already have: preserved the user's exact wording/tone/swearing/intensity, corrected only obvious spelling or speech-to-text errors, added paragraph breaks for readability, and chosen a suitable title. This tool does not rewrite anything itself - it stores and echoes back exactly the text and title you pass in as the one draft eligible for upload. Requires Pure Vent Mode to be active. Does not upload or create any file.",
+    {
+      text: z.string().describe("The final styled entry text, exactly as it should be uploaded"),
+      title: z.string().describe("A suitable title for the entry, chosen by you"),
+      entry_date: z.string().optional().describe("Entry date as DD-MM-YYYY; defaults to today in Sydney time"),
+    },
+    async ({ text, title, entry_date }) => {
+      const session = getVentSession(authContext);
+      if (!session.active) {
+        throw new Error('Pure Vent Mode is not active. Call ventmode with state="on" first.');
+      }
+      const cleanTitle = sanitizeVentTitle(title);
+      const entryDate = entry_date || sydneyDateDDMMYYYY();
+      monthYearFromEntryDate(entryDate); // throws if the format/date is invalid
+      const hash = hashVentDraft(cleanTitle, entryDate, text);
+      session.pendingDraft = { title: cleanTitle, entryDate, text, hash, createdAt: Date.now() };
+      logEvent("tool.style_vent_entry.ok", { ...authContext, chars: text.length, entryDate });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `FINAL DRAFT\n\n${cleanTitle}\n\n${entryDate}\n\n${text}\n\nStatus: Awaiting /uploadvent`,
+          },
+        ],
+      };
+    }
+  );
+
+  server.tool(
+    "upload_vent_entry",
+    "Upload the exact pending draft most recently locked in by style_vent_entry. Takes no entry text - it reads the approved draft from server-side session state so content can't be silently swapped in at upload time. Refuses if Pure Vent Mode isn't active, if style_vent_entry hasn't been called, or if the stored draft fails its integrity check. This IS the confirmation - do not ask the user to confirm again after they type /uploadvent.",
+    {},
+    async () => {
+      const session = getVentSession(authContext);
+      if (!session.active) {
+        throw new Error('Pure Vent Mode is not active. Call ventmode with state="on" first.');
+      }
+      const draft = session.pendingDraft;
+      if (!draft) {
+        throw new Error("No pending draft. Call style_vent_entry first.");
+      }
+      if (hashVentDraft(draft.title, draft.entryDate, draft.text) !== draft.hash) {
+        throw new Error("Pending draft failed its integrity check - call style_vent_entry again.");
+      }
+
+      const { monthYear } = monthYearFromEntryDate(draft.entryDate);
+      const monthDir = `${VENT_FOLDER}/${monthYear}`;
+      await ops.makeDir(monthDir);
+      const filename = `${draft.entryDate} - ${draft.title}.md`;
+      const filepath = `${monthDir}/${filename}`;
+      const fileContent = `# ${draft.title}\n\n${draft.entryDate}\n\n${draft.text}\n`;
+      await ops.writeFile(filepath, fileContent);
+
+      // Never log the raw vent text itself - path/size/user only.
+      logEvent("file.change.upload", {
+        ...authContext,
+        source: "vent_mode",
+        filepath,
+        bytes: Buffer.byteLength(fileContent, "utf8"),
+      });
+
+      session.pendingDraft = null;
+      return {
+        content: [{ type: "text", text: `Uploaded: \`${filename}\`\nLocation: \`/${monthDir}/\`` }],
+      };
+    }
+  );
+
+  server.tool(
     "search_files",
     "Search file contents for a substring within the Master Hive store",
     {
@@ -1208,7 +1386,7 @@ function buildServer(authContext = {}) {
     },
     async ({ query, subpath }) => {
       logEvent("tool.search_files.start", { ...authContext, query, subpath: subpath || "" });
-      const matches = await ops.searchFiles(query, subpath);
+      const matches = (await ops.searchFiles(query, subpath)).filter((m) => !isVentFolderPath(m.path));
       logEvent("tool.search_files.ok", { ...authContext, query, matchCount: matches.length });
       const text = matches.length ? matches.map((m) => `${m.path}:${m.line}: ${m.text}`).join("\n") : "(no matches)";
       return { content: [{ type: "text", text }] };
@@ -1444,6 +1622,32 @@ function buildServer(authContext = {}) {
     {},
     "empty_trash",
     `First list what's in ${TRASH_FOLDER} and confirm with me exactly what will be permanently deleted before calling empty_trash - this cannot be undone.`
+  );
+
+  toolPrompt(
+    "ventmode",
+    "Turn Pure Vent Mode on or off",
+    { state: z.enum(["on", "off"]).describe("on or off") },
+    "ventmode"
+  );
+
+  toolPrompt(
+    "styleentry",
+    "Lock in the final styled draft of a Pure Vent Mode entry, required before /uploadvent",
+    {
+      text: z.string().describe("The final styled entry text"),
+      title: z.string().describe("A suitable title"),
+      entry_date: z.string().optional().describe("DD-MM-YYYY, defaults to today in Sydney time"),
+    },
+    "style_vent_entry"
+  );
+
+  toolPrompt(
+    "uploadvent",
+    "Upload the most recently styled Pure Vent Mode draft",
+    {},
+    "upload_vent_entry",
+    "This is the confirmation - do not ask me to confirm again."
   );
 
   return server;
