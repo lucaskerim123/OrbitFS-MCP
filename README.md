@@ -1,11 +1,11 @@
-﻿# mcp-hive-server
+﻿# orbitfs-mcp-server
 
 MCP and REST server for the Master Hive file store.
 
 It exposes the FireStorm root at `HIVE_ROOT` over:
 
 - `POST /mcp` for Claude and ChatGPT MCP clients
-- `GET /api/*` and `POST /api/*` for the Master Brain web panel
+- `GET /api/*` and `POST /api/*` for the OrbitFS web panel
 
 ## What it serves
 
@@ -49,10 +49,10 @@ npm start
 For local dev, `node server.js` also works.
 
 Setting up on a brand new machine (fresh VPS, etc.)? Copy `.env.example` to
-`.env` and fill in the values, or use `the-master-brain`'s
+`.env` and fill in the values, or use `orbitfs`'s
 `deploy/Install-BaseStructure.ps1`, which creates the `HIVE_ROOT` folder
 skeleton, generates `.env` for this repo, and runs `npm install` in one
-step. Full walkthrough: `the-master-brain/GETTING_STARTED.md`.
+step. Full walkthrough: `orbitfs/GETTING_STARTED.md`.
 
 ## API summary
 
@@ -104,3 +104,4 @@ depends on the client:
 - Protected root folders are intentionally non-deletable and non-trashable.
 - Trash is auto-purged after the configured retention window, default `4` days.
 - All tool calls, REST requests, and file changes are logged in `logs/`.
+

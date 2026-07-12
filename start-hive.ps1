@@ -1,9 +1,14 @@
+﻿$repoDir = $PSScriptRoot
+$serverScript = Join-Path $repoDir "server.js"
+$outLog = Join-Path $repoDir "out.log"
+$errLog = Join-Path $repoDir "err.log"
+
 $hivePortListening = & 'C:\Windows\System32\netstat.exe' -ano | Select-String ":3939\s.*LISTENING"
 if (-not $hivePortListening) {
-  Start-Process -FilePath "node" -ArgumentList "C:\mcp-hive-server\server.js" `
-    -WorkingDirectory "C:\mcp-hive-server" `
-    -RedirectStandardOutput "C:\mcp-hive-server\out.log" `
-    -RedirectStandardError "C:\mcp-hive-server\err.log" -WindowStyle Hidden
+  Start-Process -FilePath "node" -ArgumentList $serverScript `
+    -WorkingDirectory $repoDir `
+    -RedirectStandardOutput $outLog `
+    -RedirectStandardError $errLog -WindowStyle Hidden
 }
 
 $tunnelRunning = Get-Process cloudflared -ErrorAction SilentlyContinue

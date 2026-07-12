@@ -1,5 +1,5 @@
-{
-  "name": "hive-addon-sorter",
+﻿{
+  "name": "orbitfs-sorter",
   "version": "1.0.0",
   "description": "Master Hive Addon Sorter with live folder indexing and confirm-before-move safety.",
   "type": "module",
@@ -9,3 +9,4 @@
     "check": "node --check server.js && node --check sorter-core.js"
   }
 }
+

@@ -1,5 +1,5 @@
-{
-    "name": "mcp-hive-server",
+﻿{
+    "name": "orbitfs-mcp-server",
     "version": "1.0.0",
     "description": "",
     "main": "index.js",
@@ -19,3 +19,4 @@
     },
     "type": "module"
 }
+
