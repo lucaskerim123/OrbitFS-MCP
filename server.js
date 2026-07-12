@@ -1160,6 +1160,52 @@ async function loadStartupContextFiles(filepaths, load) {
   };
 }
 
+function referenceWords(value = "") {
+  return normalizeRelativePath(value)
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{1,8}$/i, "")
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function scorePathReference(candidatePath, reference) {
+  const candidate = normalizeRelativePath(candidatePath).toLowerCase();
+  const basename = path.basename(candidate).toLowerCase();
+  const withoutExt = basename.replace(/\.[a-z0-9]{1,8}$/i, "");
+  const query = normalizeRelativePath(reference).toLowerCase();
+  const queryWithoutExt = query.replace(/\.[a-z0-9]{1,8}$/i, "");
+  if (candidate === query) return 1000;
+  if (basename === query) return 950;
+  if (withoutExt === queryWithoutExt) return 925;
+  const words = referenceWords(reference);
+  if (!words.length || !words.every((word) => candidate.includes(word))) return 0;
+  return 500 + words.reduce((score, word) => score + (basename.includes(word) ? 20 : 5), 0);
+}
+
+async function resolveHiveReference(reference, expectedType) {
+  const normalized = normalizeRelativePath(reference);
+  if (!normalized) throw new Error("A file or folder name is required");
+  try {
+    const stat = await fs.stat(ops.safeResolve(normalized));
+    const type = stat.isDirectory() ? "dir" : "file";
+    if (!expectedType || expectedType === type) return { path: normalized, type, matchedBy: "exact path" };
+  } catch {}
+
+  const entries = (await ops.listFiles("", { recursive: true }))
+    .filter((entry) => !isVentFolderPath(entry.path))
+    .filter((entry) => !expectedType || entry.type === expectedType)
+    .map((entry) => ({ ...entry, score: scorePathReference(entry.path, normalized) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
+  if (!entries.length) throw new Error(`No ${expectedType === "dir" ? "folder" : "file or folder"} matched "${reference}"`);
+  const best = entries[0];
+  const tied = entries.filter((entry) => entry.score === best.score);
+  if (tied.length > 1) {
+    throw new Error(`"${reference}" is ambiguous. Choose one: ${tied.slice(0, 10).map((entry) => entry.path).join(" | ")}`);
+  }
+  return { path: best.path, type: best.type, matchedBy: "short-name search" };
+}
+
 async function buildFirestormStartup(projectsInput, loadInput, authContext = {}) {
   const projects = parseStartupProjects(projectsInput);
   const load = parseStartupLoadLevel(loadInput);
@@ -1524,6 +1570,59 @@ function buildServer(authContext = {}) {
       await ops.moveFile(from, to);
       logEvent("file.change.move", { ...authContext, source: "mcp_tool", from, to });
       return { content: [{ type: "text", text: `Moved ${from} -> ${to}` }] };
+    }
+  );
+
+  server.tool(
+    "find_items",
+    "Find Master Hive files or folders by a short name instead of a full directory. Use this when the user's wording could match more than one item.",
+    {
+      query: z.string().describe("Short file or folder name, such as Master Log v1 or Court Profiles"),
+      type: z.enum(["any", "file", "folder"]).optional().describe("Optional item type filter"),
+    },
+    async ({ query, type }) => {
+      const expectedType = type === "folder" ? "dir" : type === "file" ? "file" : undefined;
+      const entries = (await ops.listFiles("", { recursive: true }))
+        .filter((entry) => !isVentFolderPath(entry.path))
+        .filter((entry) => !expectedType || entry.type === expectedType)
+        .map((entry) => ({ ...entry, score: scorePathReference(entry.path, query) }))
+        .filter((entry) => entry.score > 0)
+        .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+        .slice(0, 20);
+      const text = entries.length
+        ? entries.map((entry, index) => `${index + 1}. ${entry.type === "dir" ? "📁" : "📄"} ${entry.path}`).join("\n")
+        : `(no matches for "${query}")`;
+      return { content: [{ type: "text", text }] };
+    }
+  );
+
+  server.tool(
+    "move_item",
+    "Move a Master Hive file or folder using short names instead of full directory paths. First call with confirmed=false to resolve and preview the exact move. After the user confirms that exact preview, call again with confirmed=true. Never set confirmed=true without explicit user confirmation.",
+    {
+      source: z.string().describe("Short name or full path of the file/folder to move"),
+      destination_folder: z.string().describe("Short name or full path of the destination folder"),
+      new_name: z.string().optional().describe("Optional new filename/folder name; omit to keep its current name"),
+      confirmed: z.boolean().optional().describe("false previews only; true executes after explicit confirmation"),
+    },
+    async ({ source, destination_folder, new_name, confirmed }) => {
+      const resolvedSource = await resolveHiveReference(source);
+      const resolvedDestination = await resolveHiveReference(destination_folder, "dir");
+      const finalName = String(new_name || path.basename(resolvedSource.path)).trim();
+      if (!finalName || finalName.includes("/") || finalName.includes("\\")) throw new Error("new_name must be a name only, not a path");
+      const to = `${resolvedDestination.path}/${finalName}`;
+      if (!confirmed) {
+        return {
+          content: [{
+            type: "text",
+            text: `Move preview (nothing moved yet):\nFROM: ${resolvedSource.path}\nTO: ${to}\n\nAsk the user to confirm this exact move, then call move_item again with confirmed=true.`,
+          }],
+        };
+      }
+      assertMutablePath(resolvedSource.path, "move");
+      await ops.moveFile(resolvedSource.path, to);
+      logEvent("file.change.move", { ...authContext, source: "mcp_short_reference", from: resolvedSource.path, to });
+      return { content: [{ type: "text", text: `Moved ${resolvedSource.path} -> ${to}` }] };
     }
   );
 
@@ -1904,9 +2003,14 @@ function buildServer(authContext = {}) {
   );
   toolPrompt(
     "move",
-    "Move or rename a file or folder",
-    { from: z.string().describe("Relative source path"), to: z.string().describe("Relative destination path") },
-    "move_file"
+    "Move a file or folder using short names",
+    {
+      source: z.string().describe("Short source name or full path"),
+      destination_folder: z.string().describe("Short destination folder name or full path"),
+      new_name: z.string().optional().describe("Optional new name"),
+    },
+    "move_item",
+    "Preview the resolved FROM and TO paths first. Do not execute until I confirm the exact move."
   );
 
   toolPrompt("mkdir", "Create a folder", { subpath: z.string().describe("Relative folder path to create") }, "mkdir");
@@ -2463,7 +2567,6 @@ serverHandle = app.listen(PORT, async () => {
   }, TRASH_PURGE_INTERVAL_MS).unref();
   logEvent("server.start", { port: PORT, root: ROOT, publicBaseUrl: PUBLIC_BASE_URL });
 });
-
 
 
 
