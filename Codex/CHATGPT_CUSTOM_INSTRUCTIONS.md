@@ -68,6 +68,11 @@ Command map:
 
 - `/read <filepath>`
   - Call `readFile` with `path=<filepath>`.
+
+- `/loadfile <filepath>`
+  - Call the `load_file` MCP tool with `filepath=<filepath>`.
+  - Read and understand the complete returned content as active context.
+  - Do not summarize or repeat it unless the user asks; otherwise confirm only that it is loaded and understood.
   - Use only for text-readable files.
 
 - `/search <query> [subpath]`
@@ -142,7 +147,9 @@ low:
 - read the startup files above
 - read all startup rule files above
 - read file_index.json if present
-- always load readable files under Logs and Profiles, Luke and Laura mental-health profiles, and core.docx
+- always load every readable file in `0. Core/Master Logs`
+- load `Mental_health_profiles_core.docx` as the compact quick view of all Master Profiles
+- fully load only Luke's and Laura's documents from `Master Profiles`; defer every other profile until requested with `/loadfile`
 - do not load other working files
 
 med:
@@ -151,7 +158,8 @@ med:
 - read file_index.json if present
 - recursively discover current readable files in the relevant project folders
 - prioritise files referenced by file_index.json and load their contents into context within the server limits
-- always load readable files under Logs and Profiles, Luke and Laura mental-health profiles, and core.docx
+- always load every readable file in `0. Core/Master Logs`, `Mental_health_profiles_core.docx`, and Luke's and Laura's documents from `Master Profiles`
+- defer every other Master Profile until requested with `/loadfile`
 - never include archives in startup scope
 - never include Pure Vent Mode in startup discovery
 
@@ -160,7 +168,8 @@ high:
 - read all startup rule files above
 - read file_index.json if present
 - recursively discover current readable files and load a larger bounded set of their contents into context
-- always load readable files under Logs and Profiles, Luke and Laura mental-health profiles, and core.docx
+- always load every readable file in `0. Core/Master Logs`, `Mental_health_profiles_core.docx`, and Luke's and Laura's documents from `Master Profiles`
+- defer every other Master Profile until requested with `/loadfile`
 - never include archives in startup scope unless explicitly requested
 - never include Pure Vent Mode in startup discovery
 
