@@ -9,12 +9,10 @@ const WIDGET_URI = "ui://widget/orbitfs-startup-v2.html";
 const WIDGET_HTML = await fs.readFile(path.join(SERVER_DIR, "app/widget/index.html"), "utf8");
 const originalTool = McpServer.prototype.tool;
 const resourceRegistered = new WeakSet();
+const DEFAULT_PUBLIC_ORIGIN = "https://mcp.incendiarynetworks.cc";
 
 function getWidgetDomain() {
-  const configured = process.env.ORBITFS_WIDGET_DOMAIN || process.env.PUBLIC_BASE_URL;
-  if (!configured) {
-    throw new Error("ORBITFS_WIDGET_DOMAIN or PUBLIC_BASE_URL must be set to the public HTTPS origin for the ChatGPT widget.");
-  }
+  const configured = process.env.ORBITFS_WIDGET_DOMAIN || process.env.PUBLIC_BASE_URL || DEFAULT_PUBLIC_ORIGIN;
   const url = new URL(configured);
   if (url.protocol !== "https:") {
     throw new Error("OrbitFS widget domain must use HTTPS.");
