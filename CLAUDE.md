@@ -2,7 +2,7 @@
 
 This repo is the **OrbitFS MCP server** only (internal MCP name `orbitfs`; was
 "Master Hive"). The web panel and sync engine live in a separate repo,
-**`orbitfs-panel`** (`F:\orbitfs-panel`) — don't look for panel UI code here.
+**`orbitfs-panel`** (`F:\OrbitFS Project\orbitfs-panel`) — don't look for panel UI code here.
 See [README.md](README.md) for the tool/API surface and
 [LIVE_SERVER_STRUCTURE.md](LIVE_SERVER_STRUCTURE.md) for safety rules (don't run
 two prod servers against the same HIVE_ROOT, don't commit `.env`/tokens/logs).
@@ -11,9 +11,9 @@ two prod servers against the same HIVE_ROOT, don't commit `.env`/tokens/logs).
 
 | Role | Service | Dir | Port | StartType |
 |------|---------|-----|------|-----------|
-| MCP server (this repo) | **OrbitFSMcpServer** | F:\orbitfs-mcp | 3939 | Manual |
-| Web panel (orbitfs-panel repo) | **OrbitFSPanel** | F:\orbitfs-panel | 4000 | Automatic |
-| Addon sorter | **OrbitFSSorter** | F:\orbitfs-mcp\hive-addon-sorter | 4055 (auto) | Manual |
+| MCP server (this repo) | **OrbitFSMcpServer** | F:\OrbitFS Project\orbitfs-mcp | 3939 | Manual |
+| Web panel (orbitfs-panel repo) | **OrbitFSPanel** | F:\OrbitFS Project\orbitfs-panel | 4000 | Automatic |
+| Addon sorter | **OrbitFSSorter** | F:\OrbitFS Project\orbitfs-mcp\plugins\The Orbit Sorter | 4055 (auto) | Manual |
 | Cloudflare tunnel | **OrbitFSTunnel** | C:\cloudflared | — | Automatic |
 
 - Restart any of them via the Windows service, e.g.
