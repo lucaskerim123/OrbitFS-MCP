@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{font-family:Inter,system-ui,sans-serif;color:#e8eefc;background:#101521}*{box-sizing:border-box}body{margin:0;padding:14px}.card{background:#171e2d;border:1px solid #2a354a;border-radius:14px;padding:14px}.head{display:flex;justify-content:space-between;gap:12px;align-items:center}.title{font-size:17px;font-weight:700}.muted{color:#9cabc4;font-size:12px}.stats{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.pill{background:#222c40;border-radius:999px;padding:6px 9px;font-size:12px}.files{display:grid;gap:7px;max-height:280px;overflow:auto}.file{display:flex;gap:8px;background:#111827;border-radius:9px;padding:8px;font-size:12px;word-break:break-word}.ok{color:#55d68b}.partial{color:#f7c85b}.bad{color:#ff7777}.toolbar{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}input,button{border:1px solid #33415b;background:#111827;color:#eef4ff;border-radius:9px;padding:9px}button{cursor:pointer;font-weight:600}.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}pre{white-space:pre-wrap;max-height:260px;overflow:auto;background:#0d121d;border-radius:9px;padding:10px;font-size:11px}.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <div>
+      <div class="title" id="title">OrbitFS</div>
+      <div class="muted" id="subtitle">Waiting for startup result…</div>
+    </div>
+    <div class="pill" id="strength">—</div>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="files" id="files"></div>
+  <div class="toolbar"><input id="path" placeholder="Folder path"><button id="browse">Browse</button></div>
+  <div class="toolbar"><input id="query" placeholder="Search file contents"><button id="search">Search</button></div>
+  <div class="actions"><button id="refresh">Refresh startup</button><button id="clear">Clear output</button></div>
+  <pre id="output" class="hidden"></pre>
+</div>
+<script>
+let sequence=1;
+const pending=new Map();
+let lastInput={project:"Master",loadstrength:"med"};
+function rpc(method,params){const id=sequence++;window.parent.postMessage({jsonrpc:"2.0",id,method,params},"*");return new Promise((resolve,reject)=>pending.set(id,{resolve,reject}));}
+function callTool(name,args){return rpc("tools/call",{name,arguments:args});}
+function textFrom(result){return(result?.content||[]).map(item=>item.text||"").join("\n");}
+function showOutput(text){const element=document.getElementById("output");element.textContent=text||"(no output)";element.classList.remove("hidden");}
+function escapeHtml(value){return String(value).replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));}
+function render(data){if(!data)return;lastInput={project:(data.projects||["Master"]).join(":"),loadstrength:data.loadstrength||"med"};document.getElementById("title").textContent=((data.projects||[]).join(" + ")||"OrbitFS")+" active";document.getElementById("subtitle").textContent="Loaded into this chat";document.getElementById("strength").textContent=(data.loadstrength||"").toUpperCase();document.getElementById("stats").innerHTML=`<span class="pill">${data.loadedFileCount||0} loaded</span><span class="pill">${data.truncatedFileCount||0} partial</span><span class="pill">${data.totalCharactersLoaded||0} chars</span>`;const files=data.visibleLoadedFiles||[];document.getElementById("files").innerHTML=files.map(file=>`<div class="file"><span class="${file.status==="loaded"?"ok":file.status==="partial"?"partial":"bad"}">${file.status==="loaded"?"✓":file.status==="partial"?"◐":"✗"}</span><span>${escapeHtml(file.path)}</span></div>`).join("")||'<div class="muted">No working files returned.</div>';}
+window.addEventListener("message",event=>{if(event.source!==window.parent)return;const message=event.data;if(!message||message.jsonrpc!=="2.0")return;if(message.id&&pending.has(message.id)){const request=pending.get(message.id);pending.delete(message.id);message.error?request.reject(message.error):request.resolve(message.result);return;}if(message.method==="ui/notifications/tool-input")lastInput=message.params?.arguments||lastInput;if(message.method==="ui/notifications/tool-result")render(message.params?.structuredContent);});
+if(window.openai?.toolOutput)render(window.openai.toolOutput);
+document.getElementById("browse").onclick=async()=>{try{showOutput(textFrom(await callTool("list_files",{subpath:document.getElementById("path").value.trim(),recursive:false})));}catch(error){showOutput(error.message||JSON.stringify(error));}};
+document.getElementById("search").onclick=async()=>{try{const query=document.getElementById("query").value.trim();if(!query)return;showOutput(textFrom(await callTool("search_files",{query})));}catch(error){showOutput(error.message||JSON.stringify(error));}};
+document.getElementById("refresh").onclick=async()=>{try{const result=await callTool("startup",lastInput);render(result?.structuredContent);showOutput(textFrom(result));}catch(error){showOutput(error.message||JSON.stringify(error));}};
+document.getElementById("clear").onclick=()=>document.getElementById("output").classList.add("hidden");
+</script>
+</body>
+</html>
