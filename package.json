@@ -18,12 +18,13 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "archiver": "^7.0.1",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jose": "^6.2.3",
-    "zod": "^4.4.3",
-    "archiver": "^7.0.1",
-    "mammoth": "^1.11.0"
+    "mammoth": "^1.11.0",
+    "pdf-parse": "^1.1.1",
+    "zod": "^4.4.3"
   },
   "type": "module"
 }
