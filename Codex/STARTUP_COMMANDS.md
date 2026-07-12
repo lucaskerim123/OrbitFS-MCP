@@ -88,8 +88,9 @@ Use for fast context only.
 Actions:
 
 1. Load the full startup contract above.
-2. Do not scan folders.
-3. Reply with:
+2. Load readable files under Logs and Profiles, Luke and Laura mental-health profiles, and `core.docx`.
+3. Do not load other working files.
+4. Reply with:
    - normalized command
    - files loaded
    - active rules
@@ -104,8 +105,9 @@ Actions:
 1. Load the full startup contract above.
 2. Recursively discover current readable files in the relevant project folders.
 3. Prioritize files referenced by `file_index.json` and load their contents into startup context within the server limits.
-4. Never include Archive folders or Pure Vent Mode in startup discovery.
-4. Reply with:
+4. Always load readable files under Logs and Profiles, Luke and Laura mental-health profiles, and `core.docx`.
+5. Never include Archive folders or Pure Vent Mode in startup discovery.
+6. Reply with:
    - normalized command
    - files loaded
    - active rules
@@ -120,7 +122,8 @@ Actions:
 
 1. Load the full startup contract above.
 2. Recursively discover current readable files and load a larger bounded set of their contents into startup context.
-3. Never include Archive folders or Pure Vent Mode in startup discovery.
+3. Always load readable files under Logs and Profiles, Luke and Laura mental-health profiles, and `core.docx`.
+4. Never include Archive folders or Pure Vent Mode in startup discovery.
 5. Reply with:
    - normalized command
    - files loaded
