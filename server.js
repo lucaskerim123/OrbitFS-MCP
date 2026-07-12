@@ -116,7 +116,6 @@ function registerWidget(server) {
   const widgetMeta = {
     ui: {
       prefersBorder: true,
-      domain: widgetDomain,
       csp: { connectDomains: [widgetDomain], resourceDomains: [widgetDomain] },
     },
     "openai/widgetDescription": "The Hive startup chooser, active context manager, file browser and upload controls.",
@@ -261,7 +260,7 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     _meta: {
       ui: { resourceUri: WIDGET_URI },
       "openai/outputTemplate": WIDGET_URI,
-      "openai/toolInvocation/invoking": "Loading The Hive project…",
+      "openai/toolInvocation/invoking": "Loading The Hive projectâ€¦",
       "openai/toolInvocation/invoked": "The Hive project loaded",
     },
   }, async ({ project, loadstrength }) => {
