@@ -1,24 +1,25 @@
 {
-    "name": "orbitfs-mcp-server",
-    "version": "1.0.0",
-    "description": "",
-    "main": "index.js",
-    "scripts": {
-        "start": "node start-server.mjs",
-        "test": "node --check start-server.mjs && node --check server.js"
-    },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
-    "dependencies": {
-        "@anthropic-ai/sdk": "^0.110.0",
-        "@modelcontextprotocol/sdk": "^1.29.0",
-        "dotenv": "^17.4.2",
-        "express": "^5.2.1",
-        "jose": "^6.2.3",
-        "zod": "^4.4.3",
-        "archiver": "^7.0.1",
-        "mammoth": "^1.11.0"
-    },
-    "type": "module"
+  "name": "orbitfs-mcp-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "apply-startup-ui": "node scripts/apply-startup-ui.mjs",
+    "test": "node --check server.js && node --check scripts/apply-startup-ui.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jose": "^6.2.3",
+    "zod": "^4.4.3",
+    "archiver": "^7.0.1",
+    "mammoth": "^1.11.0"
+  },
+  "type": "module"
 }
