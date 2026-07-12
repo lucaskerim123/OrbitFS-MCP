@@ -148,17 +148,18 @@ med:
 - read the startup files above
 - read all startup rule files above
 - read file_index.json if present
-- list only relevant top-level folders
+- recursively discover current readable files in the relevant project folders
+- prioritise files referenced by file_index.json and load their contents into context within the server limits
 - never include archives in startup scope
-- do not read user content unless specifically requested
+- never include Pure Vent Mode in startup discovery
 
 high:
 - read the startup files above
 - read all startup rule files above
 - read file_index.json if present
-- list relevant top-level and second-level folders
+- recursively discover current readable files and load a larger bounded set of their contents into context
 - never include archives in startup scope unless explicitly requested
-- do not broadly read private content unless needed for a concrete task
+- never include Pure Vent Mode in startup discovery
 
 Media rules:
 
