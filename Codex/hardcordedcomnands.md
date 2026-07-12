@@ -4,7 +4,7 @@ All 11 verified live and working. Let's spot-check one of the new ones' generate
 
 Clean and correct. Restarted the service, `git status` confirms nothing else needs touching — done.
 
-**Final command set (12 total, all going through one small command helper / Action mapping for consistency):**
+**Final command set (13 total, all going through one small command helper / Action mapping for consistency):**
 
 | Command | Args | Tool |
 |---|---|---|
@@ -13,6 +13,7 @@ Clean and correct. Restarted the service, `git status` confirms nothing else nee
 | `/startup` | `project`, `load_level` | `startup_firestorm` |
 | `/list` | `subpath` | `list_files` |
 | `/read` | `filepath` | `read_file` |
+| `/loadfile` | `filepath` | `load_file` |
 | `/search` | `query`, `subpath` | `search_files` |
 | `/stat` | `filepath` | `stat_file` |
 | `/move` | `from`, `to` | `move_file` |
