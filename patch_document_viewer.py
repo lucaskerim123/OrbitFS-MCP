@@ -125,3 +125,27 @@ core.write_text(s, encoding="utf-8")
 
 w = widget.read_text(encoding="utf-8")
 w = w.replace('.status-output{max-height:360px}', '.status-output{max-height:360px}.doc-viewer{margin-top:10px;border:1px solid #2a354a;border-radius:12px;background:#0d121d;overflow:hidden}.doc-head{display:flex;align-items:center;gap:8px;padding:10px;background:#151d2b}.doc-title{flex:1;min-width:0}.doc-title strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.doc-body{max-height:360px;overflow:auto;padding:12px;white-space:pre-wrap;line-height:1.55;font-size:13px}.doc-viewer.expanded .doc-body{max-height:72vh}.doc-viewer.fullscreen{position:fixed;inset:8px;z-index:50}.doc-viewer.fullscreen .doc-body{max-height:calc(100vh - 88px)}', 1)
+files_anchor = '''    <div class="toolbar"><input id="loadPath" placeholder="File path"><button id="loadFile">Load into ChatGPT</button></div>'''
+files_markup = '''    <div class="toolbar"><input id="loadPath" placeholder="File path"><button id="loadFile">Load into ChatGPT</button></div>
+    <div class="actions"><button id="viewFile">View in Hive</button><button id="previewFile">Preview in Hive</button></div>'''
+if files_anchor in w and 'id="viewFile"' not in w:
+    w = w.replace(files_anchor, files_markup, 1)
+
+output_anchor = '''  <pre id="output" class="hidden"></pre>'''
+viewer_markup = '''  <section id="docViewer" class="doc-viewer hidden">
+    <div class="doc-head">
+      <div class="doc-title"><strong id="docName">Document</strong><span id="docMeta" class="muted"></span></div>
+      <button id="docExpand" type="button">Expand</button>
+      <button id="docFull" type="button">Full screen</button>
+      <button id="docClose" type="button">✕</button>
+    </div>
+    <div id="docBody" class="doc-body"></div>
+  </section>
+  <pre id="output" class="hidden"></pre>'''
+if output_anchor in w and 'id="docViewer"' not in w:
+    w = w.replace(output_anchor, viewer_markup, 1)
+
+render_old = "function render(d){if(!d)return;"
+render_new = "function render(d){if(!d)return;if(d.mode==='document_viewer'&&d.document){renderDocument(d.document);return;}"
+if render_old in w:
+    w = w.replace(render_old, render_new, 1)
