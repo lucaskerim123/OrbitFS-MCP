@@ -26,7 +26,7 @@ const DEFAULT_CONFIG = {
   levels: {
     low: { maxFiles: 0, maxCharacters: 60000, perFileCharacters: 30000 },
     med: { maxFiles: 24, maxCharacters: 240000, perFileCharacters: 50000 },
-    high: { maxFiles: 250, maxCharacters: 2000000, perFileCharacters: 120000 },
+    high: { maxFiles: 80, maxCharacters: 700000, perFileCharacters: 90000 },
   },
 };
 

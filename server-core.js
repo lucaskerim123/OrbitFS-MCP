@@ -1046,9 +1046,9 @@ function buildFirestormRuleFiles(load) {
 // one large Hive cannot overflow the MCP response or the client's context.
 const STARTUP_FILE_CHAR_CAP = { low: 4000, med: 8000, high: 16000 };
 const STARTUP_FOLDER_ENTRY_CAP = 40;
-const STARTUP_CONTEXT_FILE_LIMIT = { low: 0, med: 25, high: 250 };
-const STARTUP_CONTEXT_TOTAL_CHAR_CAP = { low: 100_000, med: 200_000, high: 2_000_000 };
-const STARTUP_CONTEXT_FILE_CHAR_CAP = { low: 10_000, med: 12_000, high: 120_000 };
+const STARTUP_CONTEXT_FILE_LIMIT = { low: 0, med: 25, high: 60 };
+const STARTUP_CONTEXT_TOTAL_CHAR_CAP = { low: 100_000, med: 200_000, high: 500_000 };
+const STARTUP_CONTEXT_FILE_CHAR_CAP = { low: 10_000, med: 12_000, high: 20_000 };
 const STARTUP_TEXT_EXTENSIONS = new Set([
   ".txt", ".md", ".markdown", ".json", ".jsonl", ".csv", ".tsv",
   ".yaml", ".yml", ".xml", ".html", ".htm", ".js", ".mjs", ".cjs",
