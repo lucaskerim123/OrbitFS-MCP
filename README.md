@@ -84,6 +84,7 @@ for this repo, and runs `npm install` in one step. Full walkthrough:
 
 - `read_folder_recursive` - recursively list a folder tree
 - `read_file` - read one text file
+- `load_file` - fully read and understand one text or DOCX file as active context (`/loadfile <filepath>`)
 - `read_files_batch` - read up to 50 text files per call with bounded output
 - `export_folder` - return a temporary ZIP download link for a folder
 - `create_temporary_download_link` - return a temporary link for a file or folder
@@ -119,4 +120,3 @@ depends on the client:
 - Protected root folders are intentionally non-deletable and non-trashable.
 - Trash is auto-purged after the configured retention window, default `4` days.
 - All tool calls, REST requests, and file changes are logged in `logs/`.
-
