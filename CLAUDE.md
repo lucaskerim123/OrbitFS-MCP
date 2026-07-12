@@ -28,6 +28,8 @@ two prod servers against the same HIVE_ROOT, don't commit `.env`/tokens/logs).
 - The cloudflared tunnel is **remote-managed** (routes live in the Cloudflare
   dashboard); a local `config.yml` ingress is ignored. Do NOT have any service
   rewrite it or `taskkill` cloudflared — that fights the OrbitFSTunnel service.
+- This repo does **not** contain a local sorter anymore. Any sorter mention in
+  this repo points at `orbitfs-panel/plugins/OrbitFS Sorter`.
 
 ## Everything runs off config
 

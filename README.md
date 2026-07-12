@@ -7,6 +7,9 @@ It exposes the FireStorm root at `HIVE_ROOT` over:
 - `POST /mcp` for Claude and ChatGPT MCP clients
 - `GET /api/*` and `POST /api/*` for the OrbitFS web panel
 
+The sorter is panel-owned now. This repo no longer carries its own sorter
+plugin; use `orbitfs-panel/plugins/OrbitFS Sorter`.
+
 ## What it serves
 
 - Shared FireStorm content at `C:\Project FireStorm\The Master Hive`
@@ -22,6 +25,7 @@ It exposes the FireStorm root at `HIVE_ROOT` over:
 - `oauth.js` - OAuth registration and state tracking
 - `Codex/` - ChatGPT Actions schemas and startup command docs
 - `claude/` - Claude lane notes
+- `plugins/README.md` - placeholder note explaining why this repo's `plugins/` folder is intentionally empty
 
 ## Environment
 
