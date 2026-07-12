@@ -5,10 +5,22 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
-const WIDGET_URI = "ui://widget/orbitfs-startup-v1.html";
+const WIDGET_URI = "ui://widget/orbitfs-startup-v2.html";
 const WIDGET_HTML = await fs.readFile(path.join(SERVER_DIR, "app/widget/index.html"), "utf8");
 const originalTool = McpServer.prototype.tool;
 const resourceRegistered = new WeakSet();
+
+function getWidgetDomain() {
+  const configured = process.env.ORBITFS_WIDGET_DOMAIN || process.env.PUBLIC_BASE_URL;
+  if (!configured) {
+    throw new Error("ORBITFS_WIDGET_DOMAIN or PUBLIC_BASE_URL must be set to the public HTTPS origin for the ChatGPT widget.");
+  }
+  const url = new URL(configured);
+  if (url.protocol !== "https:") {
+    throw new Error("OrbitFS widget domain must use HTTPS.");
+  }
+  return url.origin;
+}
 
 function visibleStartupResult(text, project, loadstrength) {
   const marker = "Working files loaded into context:";
@@ -34,23 +46,37 @@ function visibleStartupResult(text, project, loadstrength) {
 function registerWidget(server) {
   if (resourceRegistered.has(server)) return;
   resourceRegistered.add(server);
+
+  const widgetDomain = getWidgetDomain();
+  const widgetMeta = {
+    ui: {
+      prefersBorder: true,
+      domain: widgetDomain,
+      csp: {
+        connectDomains: [widgetDomain],
+        resourceDomains: [widgetDomain],
+      },
+    },
+    "openai/widgetDescription": "Shows the active OrbitFS project, load strength, loaded files, search, and folder browsing controls.",
+    "openai/widgetPrefersBorder": true,
+  };
+
   server.registerResource(
     "orbitfs-startup-ui",
     WIDGET_URI,
     {
-      title: "OrbitFS",
-      description: "OrbitFS startup context and file browser",
+      title: "The Hive",
+      description: "OrbitFS startup context and file browser by IncendiaryNetwork",
       mimeType: "text/html;profile=mcp-app",
-      _meta: {
-        ui: {
-          prefersBorder: true,
-          csp: { connectDomains: [], resourceDomains: [] },
-        },
-        "openai/widgetDescription": "Shows the active OrbitFS project, load strength, loaded files, search, and folder browsing controls.",
-      },
+      _meta: widgetMeta,
     },
     async () => ({
-      contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: WIDGET_HTML }],
+      contents: [{
+        uri: WIDGET_URI,
+        mimeType: "text/html;profile=mcp-app",
+        text: WIDGET_HTML,
+        _meta: widgetMeta,
+      }],
     })
   );
 }
@@ -64,11 +90,24 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
   return this.registerTool(
     "startup",
     {
-      title: "Start OrbitFS project",
+      title: "Start The Hive project",
       description: "Use this when the user types /startup <project> <loadstrength>. Loads OrbitFS project context and shows the working files loaded into the chat.",
       inputSchema: {
         project: z.string().describe("Master, Court, Mental, Media, or combined with ':' such as Court:Mental"),
         loadstrength: z.enum(["low", "med", "high"]).optional().describe("low, med, or high; default med"),
+      },
+      outputSchema: {
+        projects: z.array(z.string()),
+        loadstrength: z.enum(["low", "med", "high"]),
+        visibleLoadedFiles: z.array(z.object({
+          path: z.string(),
+          status: z.string(),
+          truncated: z.boolean(),
+        })),
+        loadedFileCount: z.number(),
+        truncatedFileCount: z.number(),
+        totalCharactersLoaded: z.number(),
+        deferredMasterProfiles: z.boolean(),
       },
       annotations: {
         readOnlyHint: true,
@@ -79,8 +118,8 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
       _meta: {
         ui: { resourceUri: WIDGET_URI },
         "openai/outputTemplate": WIDGET_URI,
-        "openai/toolInvocation/invoking": "Loading OrbitFS project…",
-        "openai/toolInvocation/invoked": "OrbitFS project loaded",
+        "openai/toolInvocation/invoking": "Loading The Hive project…",
+        "openai/toolInvocation/invoked": "The Hive project loaded",
       },
     },
     async ({ project, loadstrength }) => {
