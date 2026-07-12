@@ -85,6 +85,8 @@ for this repo, and runs `npm install` in one step. Full walkthrough:
 - `read_folder_recursive` - recursively list a folder tree
 - `read_file` - read one text file
 - `load_file` - fully read and understand one text or DOCX file as active context (`/loadfile <filepath>`)
+- `find_items` - find files/folders from a short name
+- `move_item` - preview and confirm a move using short source/destination names instead of full paths
 - `read_files_batch` - read up to 50 text files per call with bounded output
 - `export_folder` - return a temporary ZIP download link for a folder
 - `create_temporary_download_link` - return a temporary link for a file or folder
