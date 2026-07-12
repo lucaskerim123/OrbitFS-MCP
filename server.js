@@ -32,7 +32,10 @@ const PROTECTED_ROOT_FOLDERS = new Set([]);
 const SORT_MODEL = process.env.SORT_MODEL || "claude-haiku-4-5-20251001";
 const DEFAULT_TRASH_RETENTION_DAYS = Number(process.env.TRASH_RETENTION_DAYS || 4);
 const TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
-const FETCH_MAX_BYTES = 10 * 1024 * 1024;
+// Per-file cap for MCP uploads/fetches. Bumped from 10MB and made configurable
+// via UPLOAD_MAX_MB in .env. Large files can be sent in chunks (upload_file
+// append), so this is really a ceiling on total assembled size.
+const FETCH_MAX_BYTES = Number(process.env.UPLOAD_MAX_MB || 100) * 1024 * 1024;
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = path.join(SERVER_DIR, "logs");
@@ -73,9 +76,9 @@ const ops = makeOps(ROOT);
 const execFileAsync = promisify(execFile);
 const MASTER_BRAIN_LOCAL_URL = `http://127.0.0.1:${process.env.PANEL_PORT || 4000}/`;
 const HIVE_LOCAL_PING_URL = `http://127.0.0.1:${PORT}/api/ping`;
-const MASTER_BRAIN_SERVICE_NAME = process.env.PANEL_SERVICE_NAME || "MasterBrainPanel";
-const HIVE_SERVICE_NAME = process.env.HIVE_SERVICE_NAME || "MasterHiveServer";
-const TUNNEL_SERVICE_NAME = process.env.TUNNEL_SERVICE_NAME || "MasterHiveTunnel";
+const MASTER_BRAIN_SERVICE_NAME = process.env.PANEL_SERVICE_NAME || "OrbitFSPanel";
+const HIVE_SERVICE_NAME = process.env.HIVE_SERVICE_NAME || "OrbitFSMcpServer";
+const TUNNEL_SERVICE_NAME = process.env.TUNNEL_SERVICE_NAME || "OrbitFSTunnel";
 const POWERSHELL_EXE = process.env.POWERSHELL_EXE || "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 
 function logEvent(event, fields = {}) {
@@ -682,8 +685,8 @@ const SERVER_ICON_SVG =
 
 function buildServer(authContext = {}) {
   const server = new McpServer({
-    name: "master-hive",
-    title: "Master Hive",
+    name: "orbitfs",
+    title: "OrbitFS",
     version: "1.0.0",
     description: "Shared file store and server control - list, read, write, move, sort, and trash files, plus MCP prompts for startup context and quick actions.",
     icons: [{ src: SERVER_ICON_SVG, mimeType: "image/svg+xml" }],
@@ -756,7 +759,11 @@ function buildServer(authContext = {}) {
     {
       filepath: z.string().describe("Relative path for the upload; bare filenames (no folder) go to the _sorter inbox. Use the same value for every chunk of one file."),
       contentBase64: z.string().describe("File content (or the next chunk of it), base64-encoded"),
-      append: z.boolean().optional().describe("true = append this chunk to the existing file instead of creating/overwriting it"),
+      append: z
+        .union([z.boolean(), z.enum(["true", "false"])])
+        .optional()
+        .transform((v) => v === true || v === "true")
+        .describe("true = append this chunk to the existing file instead of creating/overwriting it"),
     },
     async ({ filepath, contentBase64, append }) => {
       let buffer;
@@ -1213,7 +1220,7 @@ app.post("/mcp", async (req, res) => {
 // directly (upload/download need raw bytes, which doesn't map cleanly onto
 // MCP tool calls over JSON-RPC).
 
-app.get("/api/ping", (req, res) => res.json({ ok: true, name: "master-hive" }));
+app.get("/api/ping", (req, res) => res.json({ ok: true, name: "orbitfs" }));
 
 app.use("/api", async (req, res, next) => {
   if (req.path === "/ping") return next();
