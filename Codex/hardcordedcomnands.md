@@ -16,7 +16,7 @@ Clean and correct. Restarted the service, `git status` confirms nothing else nee
 | `/loadfile` | `filepath` | `load_file` |
 | `/search` | `query`, `subpath` | `search_files` |
 | `/stat` | `filepath` | `stat_file` |
-| `/move` | `from`, `to` | `move_file` |
+| `/move` | `source`, `destination_folder`, optional `new_name` | `move_item` (short-name resolver; preview then confirm) |
 | `/mkdir` | `subpath` | `mkdir` |
 | `/trash` | `filepath` | `move_to_trash` |
 | `/sort` | none | `preview_sort_inbox` (read-only preview) |
