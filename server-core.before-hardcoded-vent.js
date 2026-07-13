@@ -25,13 +25,6 @@ const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
 const SORT_FOLDER = "_sorter";
 const TRASH_FOLDER = "_trash";
 const VENT_FOLDER = "2. Wellbeing/Pure Vent Mode";
-const VENT_MODE_RULES = `[PURE VENT MODE - ACTIVE CHAT RULES]
-Vent Mode overlays the current chat and all currently active Hive context. Never clear, replace, unload, or block existing context. More context may be loaded while Vent Mode is active.
-This is Luke's protected space to vent worries, stress, anger, grief, paranoia, life events, and unsent thoughts without judgment or unwanted change.
-While active: match Luke's wording, tone, energy, and strong language. Do not soften, polish, clinically reframe, summarise, interpret, explain emotions, automatically analyse, or automatically ask wellbeing questions. Conversation comes first.
-Nothing is recorded, saved, uploaded, or turned into a document automatically.
-When asked to make a vent entry, create a safe readable draft that remains 99% Luke and 1% formatting. Only correct obvious transcription errors, add paragraph spacing, title, and date. Never rewrite, soften, interpret, or save automatically.
-Saving requires a separate explicit approval and must use the approved draft exactly.`;
 const LEGACY_TRASH_FOLDERS = ["?? Trash"];
 // TEMPORARILY EMPTY during the top-level folder redesign - delete/move/trash
 // protection for root folders is off. Restore the real list below once the
@@ -622,7 +615,7 @@ function getVentSession(authContext) {
   const key = ventSessionKey(authContext);
   let session = ventSessions.get(key);
   if (!session) {
-    session = { active: false, awaitingDraft: false, pendingDraft: null, startedAt: null };
+    session = { active: false, pendingDraft: null };
     ventSessions.set(key, session);
   }
   return session;
@@ -1788,52 +1781,16 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "ventmode",
-    "Activate or deactivate Pure Vent Mode. UI and command activation are identical. Vent Mode overlays current active context and never clears or replaces it.",
-    { state: z.enum(["on", "off"]) },
+    "Turn Pure Vent Mode on or off. This is a private, unfiltered journaling mode - while active, preserve the user's exact wording, tone, swearing, and intensity; don't soften, moralize, reframe, or unnecessarily polish anything; don't upload or save anything automatically; don't offer advice or commentary unless directly asked. State is stored server-side per authenticated user, not just remembered by you.",
+    { state: z.enum(["on", "off"]).describe("on = activate Pure Vent Mode, off = deactivate it") },
     async ({ state }) => {
       const session = getVentSession(authContext);
       session.active = state === "on";
-      session.awaitingDraft = false;
-      if (session.active) session.startedAt = new Date().toISOString();
       logEvent("tool.ventmode", { ...authContext, state });
-      if (session.active) return {
-        content: [{ type: "text", text: `${VENT_MODE_RULES}
-
-Reply only:
-🔴 VENT MODE — ACTIVE
-Chat-scoped. Raw. No filter. Go.` }],
-        structuredContent: { active: true, awaitingDraft: false, pendingDraft: !!session.pendingDraft, startedAt: session.startedAt, contextPreserved: true },
-      };
-      return { content: [{ type: "text", text: "VENT MODE — OFF" }], structuredContent: { active: false, awaitingDraft: false, pendingDraft: !!session.pendingDraft, contextPreserved: true } };
-    }
-  );
-
-  server.tool(
-    "vent_status",
-    "Return current Pure Vent Mode state.",
-    {},
-    async () => {
-      const session = getVentSession(authContext);
-      const state = { active: session.active, awaitingDraft: session.awaitingDraft, pendingDraft: !!session.pendingDraft, startedAt: session.startedAt, contextPreserved: true };
-      return { content: [{ type: "text", text: JSON.stringify(state) }], structuredContent: state };
-    }
-  );
-
-  server.tool(
-    "end_vent_mode",
-    "End Pure Vent Mode and begin the draft-review stage. This does not save or upload anything. After calling it, create a 99% Luke / 1% formatting draft from the vent conversation and call style_vent_entry with that exact draft.",
-    {},
-    async () => {
-      const session = getVentSession(authContext);
-      if (!session.active) throw new Error("Pure Vent Mode is not active.");
-      session.active = false;
-      session.awaitingDraft = true;
-      logEvent("tool.ventmode.end", authContext);
-      return {
-        content: [{ type: "text", text: `VENT MODE — ENDED
-Now turn the vent conversation into a safe vent entry: preserve Luke's wording, tone, strong language and meaning; correct only obvious transcription errors; add paragraph spacing, title and date; do not soften, interpret, analyse, or save. Then call style_vent_entry with the final draft and show it for approval.` }],
-        structuredContent: { active: false, awaitingDraft: true, pendingDraft: false, contextPreserved: true },
-      };
+      if (state === "on") {
+        return { content: [{ type: "text", text: "Ã°Å¸â€Â´\nVENT MODE Ã¢â‚¬â€ ACTIVE\nChat-scoped. Private. Raw. Go." }] };
+      }
+      return { content: [{ type: "text", text: "VENT MODE Ã¢â‚¬â€ OFF" }] };
     }
   );
 
@@ -1847,15 +1804,14 @@ Now turn the vent conversation into a safe vent entry: preserve Luke's wording, 
     },
     async ({ text, title, entry_date }) => {
       const session = getVentSession(authContext);
-      if (!session.active && !session.awaitingDraft) {
-        throw new Error('Pure Vent Mode is not active and no ended vent is awaiting a draft.');
+      if (!session.active) {
+        throw new Error('Pure Vent Mode is not active. Call ventmode with state="on" first.');
       }
       const cleanTitle = sanitizeVentTitle(title);
       const entryDate = entry_date || sydneyDateDDMMYYYY();
       monthYearFromEntryDate(entryDate); // throws if the format/date is invalid
       const hash = hashVentDraft(cleanTitle, entryDate, text);
       session.pendingDraft = { title: cleanTitle, entryDate, text, hash, createdAt: Date.now() };
-      session.awaitingDraft = false;
       logEvent("tool.style_vent_entry.ok", { ...authContext, chars: text.length, entryDate });
       return {
         content: [
@@ -1874,6 +1830,9 @@ Now turn the vent conversation into a safe vent entry: preserve Luke's wording, 
     {},
     async () => {
       const session = getVentSession(authContext);
+      if (!session.active) {
+        throw new Error('Pure Vent Mode is not active. Call ventmode with state="on" first.');
+      }
       const draft = session.pendingDraft;
       if (!draft) {
         throw new Error("No pending draft. Call style_vent_entry first.");
