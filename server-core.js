@@ -24,6 +24,7 @@ const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
 const SORT_FOLDER = "_sorter";
 const TRASH_FOLDER = "_trash";
+const GHOST_TRASH_ROOT = process.env.GHOST_TRASH_ROOT || "B:\\OrbitFS Recovery\\Ghost Trash";
 const VENT_FOLDER = "2. Wellbeing/Pure Vent Mode";
 const VENT_MODE_RULES = `[PURE VENT MODE - ACTIVE CHAT RULES]
 Vent Mode overlays the current chat and all currently active Hive context. Never clear, replace, unload, or block existing context. More context may be loaded while Vent Mode is active.
@@ -947,6 +948,23 @@ async function movePathToTrash(filepath, authContext = {}) {
   return { from: normalized, to: destination };
 }
 
+async function moveTrashEntryToGhost(relPath, authContext = {}) {
+  const source = ops.safeResolve(relPath);
+  const stamp = `${trashEntryPrefix()}-${crypto.randomBytes(3).toString("hex")}`;
+  const safeName = path.basename(normalizeRelativePath(relPath)) || "trash-entry";
+  const destination = path.join(GHOST_TRASH_ROOT, `${stamp}-${safeName}`);
+  await fs.mkdir(GHOST_TRASH_ROOT, { recursive: true });
+  try {
+    await fs.rename(source, destination);
+  } catch (err) {
+    if (err.code !== "EXDEV") throw err;
+    await fs.cp(source, destination, { recursive: true, force: false, errorOnExist: true });
+    await fs.rm(source, { recursive: true, force: true });
+  }
+  logEvent("file.change.ghost_trash", { ...authContext, source: authContext.source || "api", from: relPath, to: destination });
+  return destination;
+}
+
 async function emptyTrash(authContext = {}) {
   let entries;
   try {
@@ -956,15 +974,15 @@ async function emptyTrash(authContext = {}) {
     throw err;
   }
 
-  const deleted = [];
+  const moved = [];
   for (const entry of entries) {
     const target = `${TRASH_FOLDER}/${entry.name}`;
-    await ops.deleteFile(target);
-    deleted.push(target);
+    const ghostPath = await moveTrashEntryToGhost(target, authContext);
+    moved.push({ from: target, to: ghostPath });
   }
 
-  logEvent("file.change.empty_trash", { ...authContext, source: authContext.source || "api", deletedCount: deleted.length });
-  return { deleted, deletedCount: deleted.length };
+  logEvent("file.change.empty_trash", { ...authContext, source: authContext.source || "api", movedToGhostCount: moved.length });
+  return { moved, movedToGhostCount: moved.length, destination: GHOST_TRASH_ROOT };
 }
 
 async function purgeExpiredTrash(authContext = {}) {
@@ -990,19 +1008,19 @@ async function purgeExpiredTrash(authContext = {}) {
       throw err;
     }
     if (stat.mtimeMs > cutoff) continue;
-    await ops.deleteFile(relPath);
-    deleted.push(relPath);
+    const ghostPath = await moveTrashEntryToGhost(relPath, authContext);
+    deleted.push({ from: relPath, to: ghostPath });
   }
 
   if (deleted.length) {
     logEvent("file.change.trash_autopurge", {
       ...authContext,
       source: authContext.source || "scheduler",
-      deletedCount: deleted.length,
+      movedToGhostCount: deleted.length,
       retentionDays,
     });
   }
-  return { deleted, deletedCount: deleted.length, retentionDays };
+  return { moved: deleted, movedToGhostCount: deleted.length, retentionDays, destination: GHOST_TRASH_ROOT };
 }
 
 function parseStartupProjects(input = "Master") {

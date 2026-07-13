@@ -260,39 +260,6 @@ async function readableStartupText(filepath) {
   return fs.readFile(absolute, "utf8");
 }
 
-const STARTUP_READABLE_EXTENSIONS = /\.(md|txt|json|jsonl|csv|yml|yaml|xml|html|js|mjs|cjs|ts|tsx|jsx|css|py|ps1|sh|sql|log|ini|cfg|conf|docx)$/i;
-
-async function expandStartupSelections(selections = []) {
-  const files = [];
-  const expandedFolders = [];
-  async function walk(abs, rel) {
-    const entries = await fs.readdir(abs, { withFileTypes: true });
-    for (const entry of entries) {
-      const childRel = normalize(path.posix.join(rel, entry.name));
-      if (excludedStartupPath(childRel)) continue;
-      const childAbs = path.join(abs, entry.name);
-      if (entry.isDirectory()) await walk(childAbs, childRel);
-      else if (STARTUP_READABLE_EXTENSIONS.test(entry.name)) files.push(childRel);
-    }
-  }
-  for (const requested of selections.map(normalize).filter(Boolean)) {
-    if (excludedStartupPath(requested)) continue;
-    const absolute = path.join(ROOT, ...requested.split("/"));
-    let stat;
-    try { stat = await fs.stat(absolute); }
-    catch (error) { throw new Error(`Configured startup path not found: ${requested}`); }
-    if (stat.isDirectory()) {
-      const before = files.length;
-      await walk(absolute, requested);
-      expandedFolders.push({ folder: requested, fileCount: files.length - before });
-    } else if (stat.isFile()) {
-      if (!STARTUP_READABLE_EXTENSIONS.test(requested)) throw new Error(`Unsupported startup file type: ${requested}`);
-      files.push(requested);
-    }
-  }
-  return { files: [...new Set(files)], expandedFolders };
-}
-
 async function collectMegaFiles() {
   const files = [];
   const roots = ["0. Core", "1. Legal", "2. Wellbeing"];
@@ -304,7 +271,7 @@ async function collectMegaFiles() {
       if (excludedStartupPath(childRel)) continue;
       const childAbs = path.join(abs, entry.name);
       if (entry.isDirectory()) await walk(childAbs, childRel);
-      else if (STARTUP_READABLE_EXTENSIONS.test(entry.name)) files.push(childRel);
+      else if (/\.(md|txt|json|jsonl|csv|yml|yaml|xml|html|js|mjs|cjs|ts|tsx|jsx|css|py|ps1|sh|sql|log|ini|cfg|conf|docx)$/i.test(entry.name)) files.push(childRel);
     }
   }
   for (const root of roots) await walk(path.join(ROOT, root), root);
@@ -326,8 +293,7 @@ async function runOrbitStartup({ project, loadstrength, mega = false, selectedFi
   const mandatoryKeys = new Set(mandatoryResolved.map((filepath) => normalize(filepath).toLowerCase()));
   const optionalRequested = [...preset, ...selectedFiles, ...taskFiles];
   if (mega) optionalRequested.push(...await collectMegaFiles());
-  const expansion = await expandStartupSelections(optionalRequested);
-  const optional = expansion.files
+  const optional = [...new Set(optionalRequested.map(normalize).filter(Boolean))]
     .filter((filepath) => !archivePath(filepath) && !mandatoryKeys.has(filepath.toLowerCase()));
 
   const loaded = [];
@@ -365,8 +331,8 @@ async function runOrbitStartup({ project, loadstrength, mega = false, selectedFi
   }
 
   const blocks = loaded.map((item) => `===== ${item.filepath} =====\n${item.content}${item.truncated ? "\n? (truncated)" : ""}`);
-  console.log(JSON.stringify({ ts: new Date().toISOString(), event: "orbit.startup.loaded", project, strength, mega, configuredSelections: optionalRequested.length, expandedFolders: expansion.expandedFolders, expandedFiles: optional.length, loaded: loaded.length, failed: failed.length }));
-  const confirmation = `${project} active. ${mega ? "MEGA 0. Core + 1. Legal + 2. Wellbeing" : strength.toUpperCase()} context loaded. ${loaded.length} files read (${optional.length} expanded preset files plus required context). Ready.`;
+  console.log(JSON.stringify({ ts: new Date().toISOString(), event: "orbit.startup.loaded", project, strength, mega, loaded: loaded.length, failed: failed.length }));
+  const confirmation = `${project} active. ${mega ? "MEGA 0. Core + 1. Legal + 2. Wellbeing" : strength.toUpperCase()} context loaded. Required files loaded fully. Ready.`;
   return {
     content: [{ type: "text", text: `[INTERNAL ORBITFS STARTUP CONTEXT - read silently; do not claim files not listed as loaded.]\n\n${blocks.join("\n\n")}\n\n${confirmation}` }],
     structuredContent: contextStructured({
@@ -375,9 +341,6 @@ async function runOrbitStartup({ project, loadstrength, mega = false, selectedFi
       loadstrength: strength,
       mega,
       alwaysLoadedFiles: mandatoryResolved,
-      configuredSelections: optionalRequested,
-      expandedFolders: expansion.expandedFolders,
-      expandedFileCount: optional.length,
       loadedFiles: loaded.map(({ content, ...rest }) => rest),
       failedFiles: failed,
       confirmation,
