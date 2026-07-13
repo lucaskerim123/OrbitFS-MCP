@@ -16,7 +16,7 @@ const extraToolsRegistered = new WeakSet();
 const DEFAULT_PUBLIC_ORIGIN = "https://mcp.incendiarynetworks.cc";
 const activeContext = new Map();
 let capturedLoadFileHandler = null;
-const HIVE_SCREENS = ["startup", "browser", "viewer", "context", "settings", "permissions", "search", "move", "upload"];
+const HIVE_SCREENS = ["startup", "browser", "viewer", "context", "vent", "settings", "permissions", "search", "move", "upload"];
 const HIVE_MODALS = ["permissions", "move", "info", "upload", "delete"];
 const hiveUiState = {
   currentScreen: "startup",
