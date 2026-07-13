@@ -26,12 +26,6 @@ const SORT_FOLDER = "_sorter";
 const TRASH_FOLDER = "_trash";
 const GHOST_TRASH_ROOT = process.env.GHOST_TRASH_ROOT || "B:\\OrbitFS Recovery\\Ghost Trash";
 const VENT_FOLDER = "2. Wellbeing/Pure Vent Mode";
-const JOURNAL_FOLDER = "2. Wellbeing/Letters Documents/Journal Entries";
-const JOURNAL_MODE_RULES = `[JOURNAL MODE - ACTIVE CHAT RULES]
-Journal Mode overlays the current chat and preserves all active Hive context. It is for ordinary thoughts, reflections, events, ideas, memories, plans, and day-to-day life.
-While active: respond normally and conversationally. Do not dramatise, clinically reinterpret, or turn every message into advice. Do not save anything automatically.
-When asked to style the journal entry, preserve Luke's wording, meaning, tone, and sequence. Lightly correct obvious transcription errors, add paragraphs, title, and date, and remove only accidental repetition. Do not soften strong wording or add interpretations.
-Saving requires separate explicit approval and must upload the exact locked draft.`;
 const VENT_MODE_RULES = `[PURE VENT MODE - ACTIVE CHAT RULES]
 Vent Mode overlays the current chat and all currently active Hive context. Never clear, replace, unload, or block existing context. More context may be loaded while Vent Mode is active.
 This is Luke's protected space to vent worries, stress, anger, grief, paranoia, life events, and unsent thoughts without judgment or unwanted change.
@@ -614,7 +608,6 @@ function pruneUploadTokens() {
 // survives between requests, so mode on/off and the pending draft have to
 // live out here instead.
 const ventSessions = new Map();
-const journalSessions = new Map();
 
 function ventSessionKey(authContext = {}) {
   // This server is single-tenant - a valid bearer key or OAuth JWT is already
@@ -632,16 +625,6 @@ function getVentSession(authContext) {
   if (!session) {
     session = { active: false, awaitingDraft: false, pendingDraft: null, startedAt: null };
     ventSessions.set(key, session);
-  }
-  return session;
-}
-
-function getJournalSession(authContext) {
-  const key = ventSessionKey(authContext);
-  let session = journalSessions.get(key);
-  if (!session) {
-    session = { active: false, awaitingDraft: false, pendingDraft: null, startedAt: null };
-    journalSessions.set(key, session);
   }
   return session;
 }
@@ -1945,122 +1928,23 @@ Now turn the vent conversation into a safe vent entry: preserve Luke's wording, 
   );
 
   server.tool(
-    "journalmode",
-    "Activate or deactivate normal Journal Mode. Journal Mode preserves current Hive context and does not save automatically.",
-    { state: z.enum(["on", "off"]) },
-    async ({ state }) => {
-      const session = getJournalSession(authContext);
-      session.active = state === "on";
-      session.awaitingDraft = false;
-      if (session.active) {
-        session.startedAt = new Date().toISOString();
-        session.pendingDraft = null;
-      }
-      logEvent("tool.journalmode", { ...authContext, state });
-      if (session.active) return {
-        content: [{ type: "text", text: `${JOURNAL_MODE_RULES}
-
-Reply only:
-JOURNAL MODE — ACTIVE
-Normal chat. Everyday thoughts.` }],
-        structuredContent: { active: true, awaitingDraft: false, pendingDraft: false, startedAt: session.startedAt, contextPreserved: true },
-      };
-      return { content: [{ type: "text", text: "JOURNAL MODE — OFF" }], structuredContent: { active: false, awaitingDraft: false, pendingDraft: !!session.pendingDraft } };
-    }
-  );
-
-  server.tool(
-    "journal_status",
-    "Return current Journal Mode state.",
-    {},
-    async () => {
-      const session = getJournalSession(authContext);
-      const state = { active: session.active, awaitingDraft: session.awaitingDraft, pendingDraft: !!session.pendingDraft, startedAt: session.startedAt, contextPreserved: true };
-      return { content: [{ type: "text", text: JSON.stringify(state) }], structuredContent: state };
-    }
-  );
-
-  server.tool(
-    "end_journal_mode",
-    "End Journal Mode and begin the draft-review stage. Does not save anything.",
-    {},
-    async () => {
-      const session = getJournalSession(authContext);
-      if (!session.active) throw new Error("Journal Mode is not active.");
-      session.active = false;
-      session.awaitingDraft = true;
-      logEvent("tool.journalmode.end", authContext);
-      return {
-        content: [{ type: "text", text: `JOURNAL MODE — ENDED\nThe conversation is ready to be styled. Nothing has been saved.` }],
-        structuredContent: { active: false, awaitingDraft: true, pendingDraft: false, contextPreserved: true },
-      };
-    }
-  );
-
-  server.tool(
-    "style_journal_entry",
-    "Lock the final Journal Mode draft before upload. Preserve the user's wording and meaning with only light readability cleanup.",
+    "save_journal_entry",
+    "Save a normal journal entry as Markdown into the _sorter inbox. The caller must provide the final title and text. Nothing is saved until this tool is called.",
     {
-      text: z.string().min(1),
-      title: z.string().min(1),
-      entry_date: z.string().optional(),
+      text: z.string().min(1).describe("Final journal entry text"),
+      title: z.string().min(1).describe("Journal entry title"),
+      entry_date: z.string().optional().describe("Entry date as DD-MM-YYYY; defaults to today in Sydney time"),
     },
     async ({ text, title, entry_date }) => {
-      const session = getJournalSession(authContext);
-      if (!session.awaitingDraft && !session.active) throw new Error("No active or ended journal is awaiting a draft.");
       const cleanTitle = sanitizeVentTitle(title);
       const entryDate = entry_date || sydneyDateDDMMYYYY();
       monthYearFromEntryDate(entryDate);
-      const hash = hashVentDraft(cleanTitle, entryDate, text);
-      session.pendingDraft = { title: cleanTitle, entryDate, text, hash, createdAt: Date.now() };
-      session.active = false;
-      session.awaitingDraft = false;
-      logEvent("tool.style_journal_entry.ok", { ...authContext, chars: text.length, entryDate });
-      return {
-        content: [{ type: "text", text: `FINAL JOURNAL DRAFT
-
-${cleanTitle}
-
-${entryDate}
-
-${text}
-
-Status: Awaiting approval` }],
-        structuredContent: { active: false, awaitingDraft: false, pendingDraft: true, title: cleanTitle, entryDate, hash },
-      };
-    }
-  );
-
-  server.tool(
-    "upload_journal_entry",
-    "Upload the exact locked Journal Mode draft to the Journal Entries folder. This is the explicit approval step.",
-    {},
-    async () => {
-      const session = getJournalSession(authContext);
-      const draft = session.pendingDraft;
-      if (!draft) throw new Error("No pending journal draft. Call style_journal_entry first.");
-      if (hashVentDraft(draft.title, draft.entryDate, draft.text) !== draft.hash) throw new Error("Pending journal draft failed its integrity check.");
-      const { monthYear } = monthYearFromEntryDate(draft.entryDate);
-      const monthDir = `${JOURNAL_FOLDER}/${monthYear}`;
-      await ops.makeDir(monthDir);
-      const filename = `${draft.entryDate} - ${draft.title}.md`;
-      const filepath = `${monthDir}/${filename}`;
-      const fileContent = `# ${draft.title}
-
-${draft.entryDate}
-
-${draft.text}
-`;
+      const filename = `${entryDate} - ${cleanTitle}.md`;
+      const filepath = `${SORT_FOLDER}/${filename}`;
+      const fileContent = `# ${cleanTitle}\n\n${entryDate}\n\n${text}\n`;
       await ops.writeFile(filepath, fileContent);
-      logEvent("file.change.write", { ...authContext, source: "journal_mode", filepath, chars: draft.text.length });
-      session.pendingDraft = null;
-      session.awaitingDraft = false;
-      session.startedAt = null;
-      return {
-        content: [{ type: "text", text: `Uploaded: \`${filename}\`
-Location: \`/${monthDir}/\`` }],
-        structuredContent: { active: false, awaitingDraft: false, pendingDraft: false, uploaded: true, filepath },
-      };
+      logEvent("file.change.write", { ...authContext, source: "journal_mode", filepath, chars: text.length });
+      return { content: [{ type: "text", text: `Saved journal entry to \`${filepath}\`` }] };
     }
   );
 
