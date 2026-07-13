@@ -23,7 +23,7 @@ select[multiple]{width:100%;min-height:150px;padding:5px}.path{padding:8px;margi
   <section id="startup" class="panel active">
     <div class="grid">
       <label>Project<select id="project"><option value="">Select project</option><option value="1. Legal">1. Legal</option><option value="2. Wellbeing">2. Wellbeing</option></select></label>
-      <label>Strength<select id="loadstrength"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></label>
+      <label>Strength<select id="loadstrength"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="custom1">Custom 1</option><option value="custom2">Custom 2</option></select></label>
     </div>
     <p class="muted">Uses presets configured in the OrbitFS Panel. No file names or paths need to be typed.</p>
     <div class="actions"><button id="start" class="primary">Start</button><button id="mega" class="danger">MEGA</button></div>
@@ -85,7 +85,7 @@ async function refreshContextData(){
 
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
 start.onclick=async()=>{if(!project.value)return alert('Select a project.');const r=await tool('startup',{project:project.value,loadstrength:loadstrength.value,selectedFiles:[]});strength.textContent=loadstrength.value.toUpperCase();await refreshContextData();setTab('context');};
-mega.onclick=async()=>{if(!project.value)return alert('Select a project.');if(!confirm('Load every readable non-Archive file under 0. Core?'))return;await tool('startup',{project:project.value,loadstrength:'high',mega:true,selectedFiles:[]});await refreshContextData();setTab('context');};
+mega.onclick=async()=>{if(!project.value)return alert('Select a project.');if(!confirm('Load as much readable content as possible from 0. Core, 1. Legal and 2. Wellbeing? Archive, trash and sorter are always excluded.'))return;await tool('startup',{project:project.value,loadstrength:'high',mega:true,selectedFiles:[]});await refreshContextData();setTab('context');};
 openFolder.onclick=()=>loadFolder(folderChoice.value);refreshFiles.onclick=()=>loadFolder(currentPath);
 itemSelect.ondblclick=()=>{const option=itemSelect.selectedOptions[0];if(option?.dataset.type==='dir')loadFolder(option.value);};
 previewSelected.onclick=async()=>{const paths=selectedValues(itemSelect);if(paths.length!==1)return showMessage('Select exactly one file to preview.');const entry=currentEntries.find(e=>e.path===paths[0]);if(entry?.type==='dir')return loadFolder(entry.path);const r=await tool('preview_file',{filepath:paths[0]});const d=r.structuredContent?.document;filePreview.textContent=(d?.text||textFrom(r)||'(no preview)').slice(0,3500);filePreview.classList.remove('hidden');};
