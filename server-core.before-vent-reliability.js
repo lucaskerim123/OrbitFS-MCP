@@ -1812,7 +1812,7 @@ function buildServer(authContext = {}) {
       const session = getVentSession(authContext);
       session.active = state === "on";
       session.awaitingDraft = false;
-      if (session.active) { session.startedAt = new Date().toISOString(); session.pendingDraft = null; }
+      if (session.active) session.startedAt = new Date().toISOString();
       logEvent("tool.ventmode", { ...authContext, state });
       if (session.active) return {
         content: [{ type: "text", text: `${VENT_MODE_RULES}
@@ -1882,7 +1882,6 @@ Now turn the vent conversation into a safe vent entry: preserve Luke's wording, 
             text: `FINAL DRAFT\n\n${cleanTitle}\n\n${entryDate}\n\n${text}\n\nStatus: Awaiting /uploadvent`,
           },
         ],
-        structuredContent: { active: false, awaitingDraft: false, pendingDraft: true, title: cleanTitle, entryDate, hash },
       };
     }
   );
@@ -1918,11 +1917,8 @@ Now turn the vent conversation into a safe vent entry: preserve Luke's wording, 
       });
 
       session.pendingDraft = null;
-      session.awaitingDraft = false;
-      session.startedAt = null;
       return {
         content: [{ type: "text", text: `Uploaded: \`${filename}\`\nLocation: \`/${monthDir}/\`` }],
-        structuredContent: { active: false, awaitingDraft: false, pendingDraft: false, uploaded: true, filepath },
       };
     }
   );
