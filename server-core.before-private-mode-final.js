@@ -57,7 +57,6 @@ const LOG_DIR = path.join(SERVER_DIR, "logs");
 const EVENT_LOG_FILE = path.join(LOG_DIR, "master-hive-events.jsonl");
 const ERROR_LOG_FILE = path.join(LOG_DIR, "master-hive-errors.jsonl");
 const TRASH_CONFIG_FILE = path.join(SERVER_DIR, "trash-config.json");
-const PRIVATE_DRAFT_STATE_FILE = path.join(SERVER_DIR, "private-drafts.json");
 const FIRESTORM_STARTUP_FILES = {
   Master: "_system/Startup/00_MASTER_STARTUP.md",
   Court: "_system/Startup/01_COURT_SYSTEM_STARTUP.md",
@@ -616,12 +615,6 @@ function pruneUploadTokens() {
 // live out here instead.
 const ventSessions = new Map();
 const journalSessions = new Map();
-let persistedPrivateDrafts = { vent: {}, journal: {} };
-try { persistedPrivateDrafts = JSON.parse(await fs.readFile(PRIVATE_DRAFT_STATE_FILE, "utf8")); } catch {}
-persistedPrivateDrafts.vent ||= {}; persistedPrivateDrafts.journal ||= {};
-async function persistPrivateDrafts(){ await fs.writeFile(PRIVATE_DRAFT_STATE_FILE, JSON.stringify(persistedPrivateDrafts,null,2), "utf8"); }
-function defaultPrivateSession(saved={}){ return { enabled:false, recording:false, stopped:false, pendingDraft:null, startedAt:null, ...saved }; }
-async function syncPrivateSession(mode,key,session){ persistedPrivateDrafts[mode][key]=session; await persistPrivateDrafts(); }
 
 function ventSessionKey(authContext = {}) {
   // This server is single-tenant - a valid bearer key or OAuth JWT is already
@@ -637,7 +630,7 @@ function getVentSession(authContext) {
   const key = ventSessionKey(authContext);
   let session = ventSessions.get(key);
   if (!session) {
-    session = defaultPrivateSession(persistedPrivateDrafts.vent[key]);
+    session = { active: false, awaitingDraft: false, pendingDraft: null, startedAt: null };
     ventSessions.set(key, session);
   }
   return session;
@@ -647,7 +640,7 @@ function getJournalSession(authContext) {
   const key = ventSessionKey(authContext);
   let session = journalSessions.get(key);
   if (!session) {
-    session = defaultPrivateSession(persistedPrivateDrafts.journal[key]);
+    session = { active: false, awaitingDraft: false, pendingDraft: null, startedAt: null };
     journalSessions.set(key, session);
   }
   return session;
@@ -1828,22 +1821,248 @@ function buildServer(authContext = {}) {
     }
   );
 
-  server.tool("ventmode","Turn Pure Private Vent Mode on or off.",{state:z.enum(["on","off"])},async({state})=>{const key=ventSessionKey(authContext),s=getVentSession(authContext);s.enabled=state==="on";if(!s.enabled){s.recording=false;s.stopped=false;}await syncPrivateSession("vent",key,s);return{content:[{type:"text",text:s.enabled?`${VENT_MODE_RULES}\n\nVENT MODE — ON\nPress Start when ready.`:"VENT MODE — OFF"}],structuredContent:{...s,pendingDraft:!!s.pendingDraft,privacy:"pure-private"}}});
-  server.tool("start_vent_recording","Start the current Vent entry.",{},async()=>{const key=ventSessionKey(authContext),s=getVentSession(authContext);if(!s.enabled)throw new Error("Turn Vent Mode on first.");s.recording=true;s.stopped=false;s.startedAt=new Date().toISOString();await syncPrivateSession("vent",key,s);return{content:[{type:"text",text:"VENT RECORDING — STARTED"}],structuredContent:{...s,pendingDraft:!!s.pendingDraft}}});
-  server.tool("stop_vent_recording","Stop the current Vent entry without uploading it.",{},async()=>{const key=ventSessionKey(authContext),s=getVentSession(authContext);if(!s.recording)throw new Error("Vent recording is not active.");s.recording=false;s.stopped=true;await syncPrivateSession("vent",key,s);return{content:[{type:"text",text:"VENT RECORDING — STOPPED\nUse Save Draft to store the entry."}],structuredContent:{...s,pendingDraft:!!s.pendingDraft}}});
-  server.tool("save_vent_draft","Save a Pure Private Vent draft exactly as supplied.",{text:z.string().min(1),title:z.string().min(1),entry_date:z.string().optional()},async({text,title,entry_date})=>{const key=ventSessionKey(authContext),s=getVentSession(authContext);if(!s.stopped)throw new Error("Stop the Vent entry first.");const cleanTitle=sanitizeVentTitle(title),entryDate=entry_date||sydneyDateDDMMYYYY();monthYearFromEntryDate(entryDate);s.pendingDraft={title:cleanTitle,entryDate,text,hash:hashVentDraft(cleanTitle,entryDate,text),savedAt:new Date().toISOString()};await syncPrivateSession("vent",key,s);return{content:[{type:"text",text:`VENT DRAFT SAVED\n\n${cleanTitle}\n\n${entryDate}\n\n${text}`}],structuredContent:{...s,pendingDraft:true,draft:s.pendingDraft}}});
-  server.tool("reload_vent_draft","Reload the saved Pure Private Vent draft.",{},async()=>{const s=getVentSession(authContext);if(!s.pendingDraft)throw new Error("No saved Vent draft.");return{content:[{type:"text",text:`${s.pendingDraft.title}\n\n${s.pendingDraft.entryDate}\n\n${s.pendingDraft.text}`}],structuredContent:{draft:s.pendingDraft,pendingDraft:true}}});
-  server.tool("delete_vent_draft","Delete the saved Vent draft.",{},async()=>{const key=ventSessionKey(authContext),s=getVentSession(authContext);s.pendingDraft=null;await syncPrivateSession("vent",key,s);return{content:[{type:"text",text:"Vent draft deleted."}],structuredContent:{pendingDraft:false}}});
-  server.tool("upload_vent_entry","Finalise and upload the exact saved Vent draft.",{},async()=>{const key=ventSessionKey(authContext),s=getVentSession(authContext),d=s.pendingDraft;if(!d)throw new Error("No saved Vent draft.");if(hashVentDraft(d.title,d.entryDate,d.text)!==d.hash)throw new Error("Vent draft integrity check failed.");const{monthYear}=monthYearFromEntryDate(d.entryDate),monthDir=`${VENT_FOLDER}/${monthYear}`,filename=`${d.entryDate} - ${d.title}.md`,filepath=`${monthDir}/${filename}`;await ops.makeDir(monthDir);await ops.writeFile(filepath,`# ${d.title}\n\n${d.entryDate}\n\n${d.text}\n`);s.pendingDraft=null;s.stopped=false;s.startedAt=null;await syncPrivateSession("vent",key,s);return{content:[{type:"text",text:`Uploaded: \`${filename}\`\nLocation: \`/${monthDir}/\``}],structuredContent:{uploaded:true,filepath,pendingDraft:false}}});
-  server.tool("vent_status","Return current Pure Private Vent state.",{},async()=>{const s=getVentSession(authContext);return{content:[{type:"text",text:JSON.stringify({...s,pendingDraft:!!s.pendingDraft})}],structuredContent:{...s,pendingDraft:!!s.pendingDraft,privacy:"pure-private"}}});
-  server.tool("journalmode","Turn Semi Personal Journal Mode on or off.",{state:z.enum(["on","off"])},async({state})=>{const key=ventSessionKey(authContext),s=getJournalSession(authContext);s.enabled=state==="on";if(!s.enabled){s.recording=false;s.stopped=false;}await syncPrivateSession("journal",key,s);return{content:[{type:"text",text:s.enabled?`${JOURNAL_MODE_RULES}\n\nJOURNAL MODE — ON\nPress Start when ready.`:"JOURNAL MODE — OFF"}],structuredContent:{...s,pendingDraft:!!s.pendingDraft,privacy:"semi-personal"}}});
-  server.tool("start_journal_recording","Start the current Journal entry.",{},async()=>{const key=ventSessionKey(authContext),s=getJournalSession(authContext);if(!s.enabled)throw new Error("Turn Journal Mode on first.");s.recording=true;s.stopped=false;s.startedAt=new Date().toISOString();await syncPrivateSession("journal",key,s);return{content:[{type:"text",text:"JOURNAL RECORDING — STARTED"}],structuredContent:{...s,pendingDraft:!!s.pendingDraft}}});
-  server.tool("stop_journal_recording","Stop the current Journal entry without uploading it.",{},async()=>{const key=ventSessionKey(authContext),s=getJournalSession(authContext);if(!s.recording)throw new Error("Journal recording is not active.");s.recording=false;s.stopped=true;await syncPrivateSession("journal",key,s);return{content:[{type:"text",text:"JOURNAL RECORDING — STOPPED\nUse Save Draft to store the entry."}],structuredContent:{...s,pendingDraft:!!s.pendingDraft}}});
-  server.tool("save_journal_draft","Save a Semi Personal Journal draft as supplied.",{text:z.string().min(1),title:z.string().min(1),entry_date:z.string().optional()},async({text,title,entry_date})=>{const key=ventSessionKey(authContext),s=getJournalSession(authContext);if(!s.stopped)throw new Error("Stop the Journal entry first.");const cleanTitle=sanitizeVentTitle(title),entryDate=entry_date||sydneyDateDDMMYYYY();monthYearFromEntryDate(entryDate);s.pendingDraft={title:cleanTitle,entryDate,text,hash:hashVentDraft(cleanTitle,entryDate,text),savedAt:new Date().toISOString()};await syncPrivateSession("journal",key,s);return{content:[{type:"text",text:`JOURNAL DRAFT SAVED\n\n${cleanTitle}\n\n${entryDate}\n\n${text}`}],structuredContent:{...s,pendingDraft:true,draft:s.pendingDraft}}});
-  server.tool("reload_journal_draft","Reload the saved Journal draft.",{},async()=>{const s=getJournalSession(authContext);if(!s.pendingDraft)throw new Error("No saved Journal draft.");return{content:[{type:"text",text:`${s.pendingDraft.title}\n\n${s.pendingDraft.entryDate}\n\n${s.pendingDraft.text}`}],structuredContent:{draft:s.pendingDraft,pendingDraft:true}}});
-  server.tool("delete_journal_draft","Delete the saved Journal draft.",{},async()=>{const key=ventSessionKey(authContext),s=getJournalSession(authContext);s.pendingDraft=null;await syncPrivateSession("journal",key,s);return{content:[{type:"text",text:"Journal draft deleted."}],structuredContent:{pendingDraft:false}}});
-  server.tool("upload_journal_entry","Finalise and upload the exact saved Journal draft.",{},async()=>{const key=ventSessionKey(authContext),s=getJournalSession(authContext),d=s.pendingDraft;if(!d)throw new Error("No saved Journal draft.");if(hashVentDraft(d.title,d.entryDate,d.text)!==d.hash)throw new Error("Journal draft integrity check failed.");const{monthYear}=monthYearFromEntryDate(d.entryDate),monthDir=`${JOURNAL_FOLDER}/${monthYear}`,filename=`${d.entryDate} - ${d.title}.md`,filepath=`${monthDir}/${filename}`;await ops.makeDir(monthDir);await ops.writeFile(filepath,`# ${d.title}\n\n${d.entryDate}\n\n${d.text}\n`);s.pendingDraft=null;s.stopped=false;s.startedAt=null;await syncPrivateSession("journal",key,s);return{content:[{type:"text",text:`Uploaded: \`${filename}\`\nLocation: \`/${monthDir}/\``}],structuredContent:{uploaded:true,filepath,pendingDraft:false}}});
-  server.tool("journal_status","Return current Semi Personal Journal state.",{},async()=>{const s=getJournalSession(authContext);return{content:[{type:"text",text:JSON.stringify({...s,pendingDraft:!!s.pendingDraft})}],structuredContent:{...s,pendingDraft:!!s.pendingDraft,privacy:"semi-personal"}}});
+  server.tool(
+    "ventmode",
+    "Activate or deactivate Pure Vent Mode. UI and command activation are identical. Vent Mode overlays current active context and never clears or replaces it.",
+    { state: z.enum(["on", "off"]) },
+    async ({ state }) => {
+      const session = getVentSession(authContext);
+      session.active = state === "on";
+      session.awaitingDraft = false;
+      if (session.active) { session.startedAt = new Date().toISOString(); session.pendingDraft = null; }
+      logEvent("tool.ventmode", { ...authContext, state });
+      if (session.active) return {
+        content: [{ type: "text", text: `${VENT_MODE_RULES}
+
+Reply only:
+🔴 VENT MODE — ACTIVE
+Chat-scoped. Raw. No filter. Go.` }],
+        structuredContent: { active: true, awaitingDraft: false, pendingDraft: !!session.pendingDraft, startedAt: session.startedAt, contextPreserved: true },
+      };
+      return { content: [{ type: "text", text: "VENT MODE — OFF" }], structuredContent: { active: false, awaitingDraft: false, pendingDraft: !!session.pendingDraft, contextPreserved: true } };
+    }
+  );
+
+  server.tool(
+    "vent_status",
+    "Return current Pure Vent Mode state.",
+    {},
+    async () => {
+      const session = getVentSession(authContext);
+      const state = { active: session.active, awaitingDraft: session.awaitingDraft, pendingDraft: !!session.pendingDraft, startedAt: session.startedAt, contextPreserved: true };
+      return { content: [{ type: "text", text: JSON.stringify(state) }], structuredContent: state };
+    }
+  );
+
+  server.tool(
+    "end_vent_mode",
+    "End Pure Vent Mode and begin the draft-review stage. This does not save or upload anything. After calling it, create a 99% Luke / 1% formatting draft from the vent conversation and call style_vent_entry with that exact draft.",
+    {},
+    async () => {
+      const session = getVentSession(authContext);
+      if (!session.active) throw new Error("Pure Vent Mode is not active.");
+      session.active = false;
+      session.awaitingDraft = true;
+      logEvent("tool.ventmode.end", authContext);
+      return {
+        content: [{ type: "text", text: `VENT MODE — ENDED
+Now turn the vent conversation into a safe vent entry: preserve Luke's wording, tone, strong language and meaning; correct only obvious transcription errors; add paragraph spacing, title and date; do not soften, interpret, analyse, or save. Then call style_vent_entry with the final draft and show it for approval.` }],
+        structuredContent: { active: false, awaitingDraft: true, pendingDraft: false, contextPreserved: true },
+      };
+    }
+  );
+
+  server.tool(
+    "style_vent_entry",
+    "Lock in the final draft of a Pure Vent Mode entry - required before upload_vent_entry, and the only step that determines what gets uploaded. Before calling this, YOU must already have: preserved the user's exact wording/tone/swearing/intensity, corrected only obvious spelling or speech-to-text errors, added paragraph breaks for readability, and chosen a suitable title. This tool does not rewrite anything itself - it stores and echoes back exactly the text and title you pass in as the one draft eligible for upload. Requires Pure Vent Mode to be active. Does not upload or create any file.",
+    {
+      text: z.string().describe("The final styled entry text, exactly as it should be uploaded"),
+      title: z.string().describe("A suitable title for the entry, chosen by you"),
+      entry_date: z.string().optional().describe("Entry date as DD-MM-YYYY; defaults to today in Sydney time"),
+    },
+    async ({ text, title, entry_date }) => {
+      const session = getVentSession(authContext);
+      if (!session.active && !session.awaitingDraft) {
+        throw new Error('Pure Vent Mode is not active and no ended vent is awaiting a draft.');
+      }
+      const cleanTitle = sanitizeVentTitle(title);
+      const entryDate = entry_date || sydneyDateDDMMYYYY();
+      monthYearFromEntryDate(entryDate); // throws if the format/date is invalid
+      const hash = hashVentDraft(cleanTitle, entryDate, text);
+      session.pendingDraft = { title: cleanTitle, entryDate, text, hash, createdAt: Date.now() };
+      session.awaitingDraft = false;
+      logEvent("tool.style_vent_entry.ok", { ...authContext, chars: text.length, entryDate });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `FINAL DRAFT\n\n${cleanTitle}\n\n${entryDate}\n\n${text}\n\nStatus: Awaiting /uploadvent`,
+          },
+        ],
+        structuredContent: { active: false, awaitingDraft: false, pendingDraft: true, title: cleanTitle, entryDate, hash },
+      };
+    }
+  );
+
+  server.tool(
+    "upload_vent_entry",
+    "Upload the exact pending draft most recently locked in by style_vent_entry. Takes no entry text - it reads the approved draft from server-side session state so content can't be silently swapped in at upload time. Refuses if Pure Vent Mode isn't active, if style_vent_entry hasn't been called, or if the stored draft fails its integrity check. This IS the confirmation - do not ask the user to confirm again after they type /uploadvent.",
+    {},
+    async () => {
+      const session = getVentSession(authContext);
+      const draft = session.pendingDraft;
+      if (!draft) {
+        throw new Error("No pending draft. Call style_vent_entry first.");
+      }
+      if (hashVentDraft(draft.title, draft.entryDate, draft.text) !== draft.hash) {
+        throw new Error("Pending draft failed its integrity check - call style_vent_entry again.");
+      }
+
+      const { monthYear } = monthYearFromEntryDate(draft.entryDate);
+      const monthDir = `${VENT_FOLDER}/${monthYear}`;
+      await ops.makeDir(monthDir);
+      const filename = `${draft.entryDate} - ${draft.title}.md`;
+      const filepath = `${monthDir}/${filename}`;
+      const fileContent = `# ${draft.title}\n\n${draft.entryDate}\n\n${draft.text}\n`;
+      await ops.writeFile(filepath, fileContent);
+
+      // Never log the raw vent text itself - path/size/user only.
+      logEvent("file.change.upload", {
+        ...authContext,
+        source: "vent_mode",
+        filepath,
+        bytes: Buffer.byteLength(fileContent, "utf8"),
+      });
+
+      session.pendingDraft = null;
+      session.awaitingDraft = false;
+      session.startedAt = null;
+      return {
+        content: [{ type: "text", text: `Uploaded: \`${filename}\`\nLocation: \`/${monthDir}/\`` }],
+        structuredContent: { active: false, awaitingDraft: false, pendingDraft: false, uploaded: true, filepath },
+      };
+    }
+  );
+
+  server.tool(
+    "journalmode",
+    "Activate or deactivate normal Journal Mode. Journal Mode preserves current Hive context and does not save automatically.",
+    { state: z.enum(["on", "off"]) },
+    async ({ state }) => {
+      const session = getJournalSession(authContext);
+      session.active = state === "on";
+      session.awaitingDraft = false;
+      if (session.active) {
+        session.startedAt = new Date().toISOString();
+        session.pendingDraft = null;
+      }
+      logEvent("tool.journalmode", { ...authContext, state });
+      if (session.active) return {
+        content: [{ type: "text", text: `${JOURNAL_MODE_RULES}
+
+Reply only:
+JOURNAL MODE — ACTIVE
+Normal chat. Everyday thoughts.` }],
+        structuredContent: { active: true, awaitingDraft: false, pendingDraft: false, startedAt: session.startedAt, contextPreserved: true },
+      };
+      return { content: [{ type: "text", text: "JOURNAL MODE — OFF" }], structuredContent: { active: false, awaitingDraft: false, pendingDraft: !!session.pendingDraft } };
+    }
+  );
+
+  server.tool(
+    "journal_status",
+    "Return current Journal Mode state.",
+    {},
+    async () => {
+      const session = getJournalSession(authContext);
+      const state = { active: session.active, awaitingDraft: session.awaitingDraft, pendingDraft: !!session.pendingDraft, startedAt: session.startedAt, contextPreserved: true };
+      return { content: [{ type: "text", text: JSON.stringify(state) }], structuredContent: state };
+    }
+  );
+
+  server.tool(
+    "end_journal_mode",
+    "End Journal Mode and begin the draft-review stage. Does not save anything.",
+    {},
+    async () => {
+      const session = getJournalSession(authContext);
+      if (!session.active) throw new Error("Journal Mode is not active.");
+      session.active = false;
+      session.awaitingDraft = true;
+      logEvent("tool.journalmode.end", authContext);
+      return {
+        content: [{ type: "text", text: `JOURNAL MODE — ENDED\nThe conversation is ready to be styled. Nothing has been saved.` }],
+        structuredContent: { active: false, awaitingDraft: true, pendingDraft: false, contextPreserved: true },
+      };
+    }
+  );
+
+  server.tool(
+    "style_journal_entry",
+    "Lock the final Journal Mode draft before upload. Preserve the user's wording and meaning with only light readability cleanup.",
+    {
+      text: z.string().min(1),
+      title: z.string().min(1),
+      entry_date: z.string().optional(),
+    },
+    async ({ text, title, entry_date }) => {
+      const session = getJournalSession(authContext);
+      if (!session.awaitingDraft && !session.active) throw new Error("No active or ended journal is awaiting a draft.");
+      const cleanTitle = sanitizeVentTitle(title);
+      const entryDate = entry_date || sydneyDateDDMMYYYY();
+      monthYearFromEntryDate(entryDate);
+      const hash = hashVentDraft(cleanTitle, entryDate, text);
+      session.pendingDraft = { title: cleanTitle, entryDate, text, hash, createdAt: Date.now() };
+      session.active = false;
+      session.awaitingDraft = false;
+      logEvent("tool.style_journal_entry.ok", { ...authContext, chars: text.length, entryDate });
+      return {
+        content: [{ type: "text", text: `FINAL JOURNAL DRAFT
+
+${cleanTitle}
+
+${entryDate}
+
+${text}
+
+Status: Awaiting approval` }],
+        structuredContent: { active: false, awaitingDraft: false, pendingDraft: true, title: cleanTitle, entryDate, hash },
+      };
+    }
+  );
+
+  server.tool(
+    "upload_journal_entry",
+    "Upload the exact locked Journal Mode draft to the Journal Entries folder. This is the explicit approval step.",
+    {},
+    async () => {
+      const session = getJournalSession(authContext);
+      const draft = session.pendingDraft;
+      if (!draft) throw new Error("No pending journal draft. Call style_journal_entry first.");
+      if (hashVentDraft(draft.title, draft.entryDate, draft.text) !== draft.hash) throw new Error("Pending journal draft failed its integrity check.");
+      const { monthYear } = monthYearFromEntryDate(draft.entryDate);
+      const monthDir = `${JOURNAL_FOLDER}/${monthYear}`;
+      await ops.makeDir(monthDir);
+      const filename = `${draft.entryDate} - ${draft.title}.md`;
+      const filepath = `${monthDir}/${filename}`;
+      const fileContent = `# ${draft.title}
+
+${draft.entryDate}
+
+${draft.text}
+`;
+      await ops.writeFile(filepath, fileContent);
+      logEvent("file.change.write", { ...authContext, source: "journal_mode", filepath, chars: draft.text.length });
+      session.pendingDraft = null;
+      session.awaitingDraft = false;
+      session.startedAt = null;
+      return {
+        content: [{ type: "text", text: `Uploaded: \`${filename}\`
+Location: \`/${monthDir}/\`` }],
+        structuredContent: { active: false, awaitingDraft: false, pendingDraft: false, uploaded: true, filepath },
+      };
+    }
+  );
 
   server.tool(
     "search_files",
