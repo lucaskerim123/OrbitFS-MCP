@@ -2,244 +2,99 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>
-:root{font-family:Inter,system-ui,sans-serif;color:#e8eefc;background:#101521}
-*{box-sizing:border-box}
-body{margin:0;padding:12px}
-.card{background:#171e2d;border:1px solid #2a354a;border-radius:14px;padding:12px}
-.head{display:flex;justify-content:space-between;gap:10px;align-items:center}
-.title{font-size:17px;font-weight:700}.muted{color:#9cabc4;font-size:12px}.tabs,.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.tabs button.active{background:#315fa8}.panel{display:none;margin-top:10px}.panel.active{display:block}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stats{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.pill{background:#222c40;border-radius:999px;padding:5px 8px;font-size:12px}.files{display:grid;gap:6px;max-height:290px;overflow:auto}.file{display:grid;grid-template-columns:auto 1fr auto;gap:7px;align-items:center;background:#111827;border-radius:9px;padding:8px;font-size:12px}.file-actions{display:flex;gap:4px}.ok{color:#55d68b}.partial{color:#f7c85b}input,select,button{border:1px solid #33415b;background:#111827;color:#eef4ff;border-radius:8px;padding:8px}button{cursor:pointer;font-weight:600}label{display:grid;gap:4px;font-size:12px}.toolbar{display:grid;grid-template-columns:1fr auto;gap:7px;margin-top:8px}pre{white-space:pre-wrap;max-height:250px;overflow:auto;background:#0d121d;border-radius:9px;padding:9px;font-size:11px}.hidden{display:none}.primary{background:#315fa8}.danger{background:#6d2d36}.scope-note{margin:9px 0 0;line-height:1.4}.system-grid{display:grid;grid-template-columns:1fr;gap:8px}.system-card{background:#111827;border:1px solid #27344c;border-radius:10px;padding:10px}.system-card strong{display:block;margin-bottom:5px}.status-output{max-height:360px}.doc-viewer{margin-top:10px;border:1px solid #2a354a;border-radius:12px;background:#0d121d;overflow:hidden}.doc-head{display:flex;align-items:center;gap:8px;padding:10px;background:#151d2b}.doc-title{flex:1;min-width:0}.doc-title strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.doc-body{max-height:360px;overflow:auto;padding:12px;white-space:pre-wrap;line-height:1.55;font-size:13px}.doc-viewer.expanded .doc-body{max-height:72vh}.doc-viewer.fullscreen{position:fixed;inset:8px;z-index:50}.doc-viewer.fullscreen .doc-body{max-height:calc(100vh - 88px)}
-@media(max-width:520px){.grid{grid-template-columns:1fr}.file{grid-template-columns:auto 1fr}.file-actions{grid-column:2}.toolbar{grid-template-columns:1fr}.actions button{min-height:44px}}
-.shortcut-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:8px 0}.shortcut-grid button{text-align:left;min-height:40px}@media(max-width:520px){.shortcut-grid{grid-template-columns:1fr 1fr}}
-
-.head-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.head-actions button{padding:6px 8px;font-size:11px}
-.card{min-height:210px;max-height:78vh;overflow:auto}.card.large{max-height:90vh;min-height:620px}.card.compact .panel,.card.compact .tabs,.card.compact #output,.card.compact #docViewer{display:none!important}.card.fullscreen{position:fixed;inset:6px;z-index:9999;max-height:none;height:calc(100vh - 12px);overflow:auto}
-.confirm-box,.link-box{margin-top:10px;padding:10px;border:1px solid #42516e;border-radius:10px;background:#111827}.confirm-box .actions{margin-top:8px}.link-box input{width:100%}
-.doc-search{display:grid;grid-template-columns:1fr auto auto auto;gap:6px;padding:8px;border-top:1px solid #27344c;background:#111827}.doc-body mark{background:#ffd54f;color:#111}.file.selected{outline:2px solid #4f86d9}.file button{padding:5px 7px}.files{scrollbar-width:thin}.busy{opacity:.65;pointer-events:none}
-@media(max-width:520px){.head{align-items:flex-start}.head-actions{justify-content:flex-end}.card.large{min-height:78vh}.doc-head{align-items:flex-start;flex-wrap:wrap}.doc-search{grid-template-columns:1fr 1fr}.doc-search input{grid-column:1/-1}}
-
-
-.hive-modal{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:14px}.hive-modal.hidden{display:none}.hive-modal-card{width:min(620px,100%);max-height:85vh;overflow:auto;background:#171e2d;border:1px solid #42516e;border-radius:14px;padding:12px}.modal-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.modal-body{margin-top:10px}.controller-closed{display:none!important}
-
-
-/* Mobile ChatGPT frame fix: use the iframe height, not a small clipped card. */
-html,body{min-height:100%;height:100%}
-body{display:flex;flex-direction:column;padding:10px;overflow:hidden}
-.card{width:100%;height:calc(100vh - 20px);max-height:none!important;min-height:0!important;display:flex;flex-direction:column;overflow:hidden}
-.tabs{flex:0 0 auto}
-.panel.active{flex:1 1 auto;min-height:0;overflow:auto;padding-bottom:10px}
-#context.panel.active,#files.panel.active{display:flex;flex-direction:column}
-#activeFiles,#browser{flex:1 1 auto;min-height:220px;max-height:none!important;overflow:auto}
-#output{flex:0 0 auto;max-height:32vh;overflow:auto}
-.doc-viewer{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
-.doc-viewer.hidden{display:none}
-.doc-body{flex:1 1 auto;max-height:none!important;min-height:180px;overflow:auto}
-@media(max-width:520px){body{padding:8px}.card{height:calc(100vh - 16px);border-radius:14px}.head{flex:0 0 auto}.head-actions{max-width:42%;justify-content:flex-end}.tabs button{min-height:42px}.panel.active{padding-bottom:14px}#activeFiles,#browser{min-height:360px}}
-
-
-
-/* Stable mobile layout override */
-html,body{margin:0;min-height:100%;background:#101521}
-body{padding:8px!important;overflow:visible!important}
-.card{width:100%!important;min-height:680px!important;max-height:none!important;height:auto!important;overflow:visible!important;display:block!important}
-.card.compact{min-height:680px!important;max-height:none!important;height:auto!important;overflow:visible!important}
-.card.compact .panel,.card.compact .tabs,.card.compact #output,.card.compact #docViewer{display:initial!important}
-.card.large{min-height:760px!important;max-height:none!important;height:auto!important;overflow:visible!important}
-.card.fullscreen{position:fixed!important;inset:6px!important;height:calc(100vh - 12px)!important;min-height:0!important;overflow:auto!important}
-.panel.active{display:block!important;max-height:none!important;overflow:visible!important}
-#context.panel.active,#files.panel.active{display:block!important}
-.files,#activeFiles,#browser{min-height:320px!important;max-height:520px!important;overflow:auto!important}
-.tabs{display:flex!important;gap:8px!important;flex-wrap:wrap!important}.tabs button{min-height:42px!important}
-#sizeCompact{display:none!important}
-.shortcut-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:8px 0}.shortcut-grid button{text-align:left;min-height:40px}
-@media(max-width:520px){.card{min-height:720px!important}.card.large{min-height:820px!important}.files,#activeFiles,#browser{min-height:380px!important;max-height:620px!important}.head-actions{max-width:44%}}
-
-
-
-/* Close/reopen controls */
-.hive-reopen{position:sticky;top:0;z-index:10001;width:100%;min-height:52px;margin:0 0 8px;border-radius:14px;background:#315fa8;color:#fff;font-weight:800}
-.hive-reopen.hidden{display:none!important}
-.card.closed{display:none!important}
-#hiveClose{background:#6d2d36;border-color:#7e3a46;color:#fff}
-.card{max-width:100%!important}
-.card.fullscreen{overflow:auto!important}
-
+:root{font-family:Inter,system-ui,sans-serif;color:#edf3ff;background:#0f1420}
+*{box-sizing:border-box}html,body{margin:0;background:#0f1420}body{padding:7px}
+.card{width:100%;background:#171e2d;border:1px solid #2b364b;border-radius:13px;padding:10px;overflow:hidden}
+.head{display:flex;justify-content:space-between;align-items:center;gap:8px}.title{font-size:16px;font-weight:800}.muted{font-size:12px;color:#9baac2}.pill{font-size:11px;padding:5px 8px;border-radius:999px;background:#222c40}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}.tabs button.active{background:#315fa8}.panel{display:none;margin-top:10px}.panel.active{display:block}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;margin-top:8px}.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.actions button{flex:1 1 auto}
+input,select,button{border:1px solid #34415a;background:#111827;color:#eef4ff;border-radius:8px;padding:9px;min-width:0}button{font-weight:700;cursor:pointer}label{display:grid;gap:4px;font-size:12px}.primary{background:#315fa8}.danger{background:#6b2f39}.hidden{display:none!important}.busy{opacity:.65;pointer-events:none}
+select[multiple]{width:100%;min-height:150px;padding:5px}.path{padding:8px;margin-top:8px;background:#111827;border-radius:8px;font-size:12px;overflow-wrap:anywhere}.preview{margin-top:8px;padding:10px;max-height:180px;overflow:auto;white-space:pre-wrap;background:#0c111b;border:1px solid #263248;border-radius:9px;font-size:12px;line-height:1.45}.stats{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.confirm{margin-top:8px;padding:9px;border:1px solid #42516e;border-radius:9px;background:#111827}
+@media(max-width:520px){body{padding:5px}.grid{grid-template-columns:1fr}.tabs{grid-template-columns:repeat(2,1fr)}.tabs button{min-height:42px}.toolbar{grid-template-columns:1fr}.card{border-radius:11px}select[multiple]{min-height:170px}}
 </style>
 </head>
 <body>
-<button id="hiveReopen" class="hive-reopen hidden" type="button">Open Hive</button>
 <div class="card">
-  <div class="head">
-    <div><div class="title" id="title">The Hive</div><div class="muted" id="subtitle">Choose a project or manage active context.</div></div>
-    <div class="head-actions"><button id="hiveClose" type="button" title="Close Hive">Close</button>
-      <div class="pill" id="strength">—</div>
-      <button id="sizeCompact" type="button" title="Compact">Small</button>
-      <button id="sizeLarge" type="button" title="Large">Large</button>
-      <button id="sizeFull" type="button" title="Full screen">Full</button>
-    </div>
-  </div>
-
-  <div class="tabs">
-    <button data-tab="startup" class="active">Startup</button>
-    <button data-tab="context">Context</button>
-    <button data-tab="files">Files</button>
-    <button data-tab="upload">Upload</button>
-    <button data-tab="system">Settings</button>
-  </div>
+  <div class="head"><div><div id="title" class="title">OrbitFS Hive</div><div id="subtitle" class="muted">Compact context control</div></div><div id="strength" class="pill">—</div></div>
+  <div class="tabs"><button data-tab="startup" class="active">Startup</button><button data-tab="files">Files</button><button data-tab="context">Context</button><button data-tab="system">Status</button></div>
 
   <section id="startup" class="panel active">
     <div class="grid">
-      <label>Project
-        <select id="project">
-          <option value="Master">Master — 0. Core</option>
-          <option value="Court">Court — 0. Core + Legal</option>
-          <option value="Mental" selected>Mental — 0. Core + Wellbeing</option>
-          <option value="Media">Media — 0. Core + Media</option>
-          <option value="Combined">Combined — explicit multi-project load</option>
-        </select>
-      </label>
-      <label>Load strength
-        <select id="loadstrength">
-          <option value="low">Low</option>
-          <option value="med" selected>Medium</option>
-          <option value="high">High — nearly everything in scope</option>
-        </select>
-      </label>
+      <label>Project<select id="project"><option value="">Select project</option><option value="1. Legal">1. Legal</option><option value="2. Wellbeing">2. Wellbeing</option></select></label>
+      <label>Strength<select id="loadstrength"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></label>
     </div>
-    <p class="muted scope-note">The selected project and preset determine the real files loaded. Archive stays excluded.</p>
-    <label>Extra files for this startup (one Hive-relative path per line)
-      <textarea id="startupFiles" rows="4" placeholder="Choose in Files, or paste Hive-relative paths"></textarea>
-    </label>
-    <div class="actions"><button id="start" class="primary">Start</button><button id="mega" class="danger">MEGA ? LOAD ALL OF 0. CORE</button><button id="showContext">Show active context</button></div>
-  </section>
-
-  <section id="context" class="panel">
-    <div class="stats" id="stats"></div>
-    <div class="files" id="activeFiles"></div>
-    <div class="actions"><button id="refreshContext">Refresh</button><button id="loadProfiles">Load all profiles</button><button id="clearContext" class="danger">Clear unpinned</button></div>
+    <p class="muted">Uses presets configured in the OrbitFS Panel. No file names or paths need to be typed.</p>
+    <div class="actions"><button id="start" class="primary">Start</button><button id="mega" class="danger">MEGA</button></div>
   </section>
 
   <section id="files" class="panel">
-    <div class="toolbar"><input id="folder" placeholder="Folder path, blank = root"><button id="browse">Browse</button></div>
-    <div class="toolbar"><input id="fileSearch" placeholder="Search file contents"><button id="searchFiles">Search</button></div>
-    <div class="shortcut-grid">
-      <button data-shortcut-file="0. Core/Master Logs/Master_Incident_Log_V1.docx">Incident V1</button>
-      <button data-shortcut-file="0. Core/Master Logs/Master_Incident_Log_V2.docx">Incident V2</button>
-      <button data-shortcut-file="0. Core/Profiles/Mental_Health_Profiles_Core.docx">Profiles Core</button>
-      <button data-shortcut-folder="0. Core/Profiles/Master Profiles">Master Profiles</button>
-    </div>
-    <div class="files" id="browser"></div>
-    <div class="toolbar"><input id="loadPath" placeholder="Selected file or folder path"><button id="loadFile">Load</button></div>
-    <div class="actions"><button id="viewFile">View</button><button id="previewFile">Preview</button><button id="download">Download</button></div>
-    <div class="toolbar"><input id="newFolderPath" placeholder="New folder path"><button id="createFolder">Create folder</button></div>
-    <div class="toolbar"><input id="moveFrom" placeholder="Move/rename source"><input id="moveTo" placeholder="Destination folder"></div>
-    <div class="actions"><button id="previewMove">Preview move</button><button id="trashItem" class="danger">Move to trash</button></div>
-    <div id="movePreview" class="confirm-box hidden"></div>
+    <div id="currentFolder" class="path">/</div>
+    <div class="toolbar"><select id="folderChoice"><option value="">Hive root</option></select><button id="openFolder">Open folder</button></div>
+    <label style="margin-top:8px">Files and folders<select id="itemSelect" multiple></select></label>
+    <div class="actions"><button id="refreshFiles">Refresh</button><button id="previewSelected">Preview selected</button></div>
+    <div id="filePreview" class="preview hidden"></div>
+    <label style="margin-top:8px">Move selected to<select id="destinationChoice"><option value="">Hive root</option></select></label>
+    <div class="actions"><button id="moveSelected" class="primary">Move selected</button><button id="trashSelected" class="danger">Move selected to trash</button></div>
+    <label style="margin-top:8px">Rename selected item<input id="renameName" placeholder="New name only"></label>
+    <button id="renameSelected" style="margin-top:8px;width:100%">Rename</button>
+    <div id="fileMessage" class="confirm hidden"></div>
   </section>
 
-  <section id="upload" class="panel">
-    <p class="muted">Create a secure single-use upload link for your phone or computer.</p>
-    <div class="toolbar"><input id="uploadDestination" value="_sorter" placeholder="Destination folder"><button id="uploadLink" class="primary">Create link</button></div>
-    <div id="uploadResult" class="link-box hidden"><input id="uploadUrl" readonly><div class="actions"><button id="openUpload">Open</button><button id="copyUpload">Copy</button></div></div>
+  <section id="context" class="panel">
+    <div id="stats" class="stats"></div>
+    <label>Active context files<select id="activeSelect" multiple></select></label>
+    <div class="actions"><button id="refreshContext">Refresh</button><button id="unloadSelected">Unload selected</button><button id="clearContext" class="danger">Clear unpinned</button></div>
   </section>
 
   <section id="system" class="panel">
-    <div class="system-grid">
-      <div class="system-card"><strong>Server status</strong><p class="muted">Checks Master Brain panel, Hive MCP service, tunnel, ChatGPT connection and Claude connection.</p><button id="serverStatus" class="primary">Refresh server status</button></div>
-      <div class="system-card"><strong>Controls</strong><p class="muted">Start/stop/restart controls stay in the web panel or VPS service manager. This MCP tab is read-only for safety until the service-control tool is added separately.</p></div>
-    </div>
+    <p class="muted">Checks the Hive MCP and connected services.</p>
+    <button id="serverStatus" class="primary" style="width:100%">Refresh status</button>
+    <div id="statusOutput" class="preview hidden"></div>
   </section>
-
-  <div id="hiveModal" class="hive-modal hidden">
-    <div class="hive-modal-card">
-      <div class="modal-head"><strong id="modalTitle">Hive action</strong><button id="modalClose">X</button></div>
-      <div id="modalBody" class="modal-body"></div>
-    </div>
-  </div>
-
-  <section id="docViewer" class="doc-viewer hidden">
-    <div class="doc-head">
-      <div class="doc-title"><strong id="docName">Document</strong><span id="docMeta" class="muted"></span></div>
-      <button id="docFontDown" type="button">A-</button>
-      <button id="docFontUp" type="button">A+</button>
-      <button id="docFind" type="button">Find</button>
-      <button id="docCopy" type="button">Copy</button>
-      <button id="docExpand" type="button">Expand</button>
-      <button id="docFull" type="button">Full</button>
-      <button id="docClose" type="button">X</button>
-    </div>
-    <div id="docSearchBar" class="doc-search hidden"><input id="docSearchInput" placeholder="Find in document"><button id="docPrev">Prev</button><button id="docNext">Next</button><span id="docFindCount" class="muted"></span></div>
-    <div id="docBody" class="doc-body" tabindex="0"></div>
-  </section>
-  <pre id="output" class="hidden"></pre>
 </div>
-
 <script>
-let seq=1;const pending=new Map();
+let seq=1;const pending=new Map();let currentPath='';let currentEntries=[];
 function rpc(method,params){const id=seq++;window.parent.postMessage({jsonrpc:'2.0',id,method,params},'*');return new Promise((resolve,reject)=>pending.set(id,{resolve,reject}));}
 function callTool(name,args={}){if(window.openai?.callTool)return window.openai.callTool(name,args);return rpc('tools/call',{name,arguments:args});}
 function textFrom(r){return(r?.content||[]).map(x=>x.text||'').join('\n');}
-function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function show(t){output.textContent=t||'(no output)';output.classList.remove('hidden');}
 function setBusy(on){document.querySelector('.card').classList.toggle('busy',!!on);}
-function saveUi(){try{localStorage.setItem('hiveUi',JSON.stringify({tab:document.querySelector('[data-tab].active')?.dataset.tab||'startup',size:[...document.querySelector('.card').classList].find(x=>['compact','large','fullscreen'].includes(x))||'normal',folder:folder.value||''}));}catch{}}
-function setSize(mode){const card=document.querySelector('.card');card.classList.remove('compact','large','fullscreen');if(mode==='fullscreen'){card.classList.add('fullscreen');if(window.openai?.requestDisplayMode){Promise.resolve(window.openai.requestDisplayMode({mode:'fullscreen'})).catch(()=>{});}}else{card.classList.add('large');}saveUi();}
-function selectPath(pathValue,row){loadPath.value=pathValue;moveFrom.value=pathValue;document.querySelectorAll('#browser .file').forEach(x=>x.classList.remove('selected'));row?.classList.add('selected');}
-function extractUrl(text){return String(text||'').match(/https?:\/\/[^\s]+/)?.[0]||'';}
-async function tool(name,args={}){setBusy(true);try{return await callTool(name,args);}catch(err){show(err?.message||String(err));throw err;}finally{setBusy(false);}}
+async function tool(name,args={}){setBusy(true);try{return await callTool(name,args);}finally{setBusy(false);}}
+function setTab(name){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===name));if(name==='files')loadFolder(currentPath);if(name==='context')refreshContextData();}
+function selectedValues(select){return [...select.selectedOptions].map(o=>o.value).filter(Boolean);}
+function joinPath(base,name){return base?`${base}/${name}`:name;}
+function parentPath(path){return path.split('/').filter(Boolean).slice(0,-1).join('/');}
+function showMessage(text){fileMessage.textContent=text;fileMessage.classList.remove('hidden');}
 
-function renderDocument(doc){docName.textContent=doc.name||doc.path||'Document';docMeta.textContent=[doc.format,doc.pages?doc.pages+' pages':null,doc.totalLines?doc.totalLines+' lines':null,doc.truncated?'partial view':null].filter(Boolean).join(' • ');docBody.textContent=doc.text||'(no readable text extracted)';docViewer.classList.remove('hidden');docViewer.classList.toggle('expanded',!doc.preview);docExpand.textContent=docViewer.classList.contains('expanded')?'Collapse':'Expand';}
-function setTab(name){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id===name));saveUi();}
-function screenToTab(screen){return({startup:'startup',browser:'files',viewer:'files',context:'context',settings:'system',permissions:'system',search:'files',move:'files',upload:'upload'})[screen]||'startup';}
-function showHiveModal(name,target){modalTitle.textContent=`${name.charAt(0).toUpperCase()+name.slice(1)}`;const selected=target||loadPath.value||moveFrom.value||'(nothing selected)';const bodies={permissions:`Permissions for: ${selected}`,move:`Move selected item: ${selected}`,info:`File information: ${selected}`,upload:`Upload destination: ${uploadDestination.value||'_sorter'}`,delete:`Move to trash: ${selected}`};modalBody.textContent=bodies[name]||name;hiveModal.classList.remove('hidden');}
-async function handleUiController(d){const ui=d.ui||{};const card=document.querySelector('.card');card.classList.toggle('controller-closed',ui.open===false);if(ui.open===false)return;const screen=ui.currentScreen||'startup';setTab(screenToTab(screen));if(screen==='search'){fileSearch.focus();}else if(screen==='move'){moveFrom.focus();}else if(screen==='upload'){uploadDestination.focus();}else if(screen==='viewer'){const target=d.target||ui.selectedFiles?.[0];if(target){loadPath.value=target;const r=await tool('view_file',{filepath:target});render(r.structuredContent);}}else if(screen==='browser'){folder.focus();}if(ui.modal)showHiveModal(ui.modal,d.target||ui.selectedFiles?.[0]);else hiveModal.classList.add('hidden');if(d.action==='refresh'){if(screen==='context')refresh();else if(screen==='browser')browse.click();}if(d.action==='focus')card.scrollIntoView({behavior:'smooth',block:'start'});}
-function render(d){if(!d)return;if(d.mode==='ui_controller'){handleUiController(d);return;}if(d.mode==='document_viewer'&&d.document){renderDocument(d.document);return;}if(d.config){loadstrength.value=d.config.defaultStrength||'medium';}if(d.loadstrength)loadstrength.value=d.loadstrength;strength.textContent=(d.loadstrength||loadstrength.value||'').toUpperCase();if(d.projects?.length){title.textContent=`${d.projects.join(' + ')} active`;subtitle.textContent='Loaded into this chat';}const files=d.activeFiles||d.visibleLoadedFiles||[];stats.innerHTML=`<span class="pill">${d.activeFileCount??files.length} active</span><span class="pill">${d.totalCharactersLoaded||0} chars</span><span class="pill">${files.filter(f=>f.truncated).length} partial</span>`;activeFiles.innerHTML=files.length?files.map(f=>`<div class="file"><span class="${f.truncated?'partial':'ok'}">${f.truncated?'◐':'✓'}</span><span>${esc(f.path)}<div class="muted">${esc(f.source||'active')}</div></span><span class="file-actions"><button data-unload="${esc(f.path)}">Unload</button></span></div>`).join(''):'<div class="muted">No active Hive files.</div>';activeFiles.querySelectorAll('[data-unload]').forEach(b=>b.onclick=async()=>render((await callTool('unload_context_file',{filepath:b.dataset.unload})).structuredContent));if(d.mode==='chooser')setTab(d.view||'startup');if(d.mode==='loaded'||d.mode==='active')setTab('context');}
-async function refresh(){const r=await callTool('list_active_context',{});render(r.structuredContent);output.classList.add('hidden');}
+function parseList(text){return text.split('\n').map(line=>{const match=line.match(/^\[(DIR|FILE)\]\s*(.+)$/);return match?{type:match[1]==='DIR'?'dir':'file',path:match[2].trim()}:null;}).filter(Boolean);}
+function fillFolderChoices(entries){
+  const folders=entries.filter(e=>e.type==='dir');
+  folderChoice.innerHTML='';destinationChoice.innerHTML='';
+  const options=[{value:'',label:'Hive root'}];if(currentPath)options.push({value:parentPath(currentPath),label:'.. Parent folder'});options.push(...folders.map(f=>({value:f.path,label:f.path.split('/').pop()})));
+  for(const item of options){for(const select of [folderChoice,destinationChoice]){const o=document.createElement('option');o.value=item.value;o.textContent=item.label;select.appendChild(o);}}
+}
+async function loadFolder(path=''){
+  currentPath=path||'';currentFolder.textContent=currentPath?`/${currentPath}`:'/';itemSelect.innerHTML='<option>Loading…</option>';filePreview.classList.add('hidden');fileMessage.classList.add('hidden');
+  try{const r=await tool('list_files',{subpath:currentPath,recursive:false});currentEntries=parseList(textFrom(r));itemSelect.innerHTML='';for(const entry of currentEntries){const o=document.createElement('option');o.value=entry.path;o.textContent=`${entry.type==='dir'?'📁':'📄'} ${entry.path.split('/').pop()}`;o.dataset.type=entry.type;itemSelect.appendChild(o);}if(!currentEntries.length)itemSelect.innerHTML='<option disabled>(empty)</option>';fillFolderChoices(currentEntries);}catch(err){itemSelect.innerHTML=`<option disabled>${err.message||err}</option>`;}
+}
+
+async function refreshContextData(){
+  try{const r=await callTool('list_active_context',{});const d=r.structuredContent||{};const files=d.activeFiles||d.visibleLoadedFiles||[];strength.textContent=(d.loadstrength||loadstrength.value||'').toUpperCase();stats.innerHTML=`<span class="pill">${d.activeFileCount??files.length} active</span><span class="pill">${d.totalCharactersLoaded||0} chars</span>`;activeSelect.innerHTML='';for(const f of files){const o=document.createElement('option');o.value=f.path;o.textContent=f.path;activeSelect.appendChild(o);}if(!files.length)activeSelect.innerHTML='<option disabled>No active Hive files</option>';if(d.projects?.length){title.textContent=`${d.projects.join(' + ')} active`;subtitle.textContent='Loaded into this chat';}}catch{}
+}
+
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
-modalClose.onclick=()=>{hiveModal.classList.add('hidden');callTool('hive_ui',{action:'modal',modal:'close'}).catch(()=>{});};
-start.onclick=async()=>{if(!project.value){show('Select a project.');return;}const files=(startupFiles.value||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);const r=await callTool('startup',{project:project.value,loadstrength:loadstrength.value,selectedFiles:files});render(r.structuredContent);show(textFrom(r));};
-mega.onclick=async()=>{if(!project.value){show('Select a project.');return;}if(!confirm('MEGA will load every readable non-Archive file in 0. Core. Continue?'))return;const files=(startupFiles.value||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);const r=await callTool('startup',{project:project.value,loadstrength:'high',mega:true,selectedFiles:files});render(r.structuredContent);show(textFrom(r));};
-showContext.onclick=refresh;refreshContext.onclick=refresh;
-loadProfiles.onclick=async()=>{const r=await callTool('load_all_profiles',{});render(r.structuredContent);output.classList.add('hidden');};
-clearContext.onclick=async()=>{const r=await callTool('clear_active_context',{});render(r.structuredContent);output.classList.add('hidden');};
-browse.onclick=async()=>{const r=await tool('list_files',{subpath:folder.value.trim(),recursive:false});const text=textFrom(r);show(text);browser.innerHTML='';for(const line of text.split('\n').filter(Boolean)){const isDir=line.startsWith('[DIR]');const pathValue=line.replace(/^\[(DIR|FILE)\]\s*/,'');const row=document.createElement('div');row.className='file';row.innerHTML=`<span>${isDir?'📁':'📄'}</span><span class="file-name">${esc(pathValue)}</span><span class="file-actions"><button data-action="select">Select</button>${isDir?'<button data-action="open">Open</button>':'<button data-action="view">View</button>'}</span>`;row.onclick=e=>{const action=e.target?.dataset?.action;if(action==='open'){folder.value=pathValue;browse.click();return;}selectPath(pathValue,row);if(action==='view'&&!isDir)viewFile.click();};browser.appendChild(row);}};
-loadFile.onclick=async()=>{if(!loadPath.value.trim())return;const p=loadPath.value.trim();if(!/\.[a-z0-9]{1,8}$/i.test(p)){folder.value=p;browse.click();return;}const r=await tool('load_file',{filepath:p});show(textFrom(r));await refresh();};
-viewFile.onclick=async()=>{if(!loadPath.value.trim())return;const r=await tool('view_file',{filepath:loadPath.value.trim()});render(r.structuredContent);show(textFrom(r));};
-previewFile.onclick=async()=>{if(!loadPath.value.trim())return;const r=await tool('preview_file',{filepath:loadPath.value.trim()});render(r.structuredContent);show(textFrom(r));};
-docExpand.onclick=()=>{docViewer.classList.toggle('expanded');docExpand.textContent=docViewer.classList.contains('expanded')?'Collapse':'Expand';};
-docFull.onclick=()=>docViewer.classList.toggle('fullscreen');
-docClose.onclick=()=>{docViewer.classList.add('hidden');docViewer.classList.remove('fullscreen');};
-
-let docFontSize=13,docMatches=[],docMatchIndex=-1;
-function applyDocFont(){docBody.style.fontSize=`${docFontSize}px`;}
-function runDocFind(step=0){const q=docSearchInput.value.trim();const text=docBody.textContent||'';docMatches=[];docMatchIndex=-1;if(!q){docFindCount.textContent='';return;}const lower=text.toLowerCase(),needle=q.toLowerCase();let at=0;while((at=lower.indexOf(needle,at))>=0){docMatches.push(at);at+=Math.max(1,needle.length);}if(docMatches.length){docMatchIndex=step<0?docMatches.length-1:0;scrollDocMatch();}docFindCount.textContent=docMatches.length?`${docMatchIndex+1}/${docMatches.length}`:'0';}
-function scrollDocMatch(){if(docMatchIndex<0)return;const text=docBody.textContent||'';const before=text.slice(0,docMatches[docMatchIndex]);const ratio=before.length/Math.max(1,text.length);docBody.scrollTop=ratio*Math.max(0,docBody.scrollHeight-docBody.clientHeight);docFindCount.textContent=`${docMatchIndex+1}/${docMatches.length}`;}
-docFontDown.onclick=()=>{docFontSize=Math.max(10,docFontSize-1);applyDocFont();};docFontUp.onclick=()=>{docFontSize=Math.min(26,docFontSize+1);applyDocFont();};docFind.onclick=()=>docSearchBar.classList.toggle('hidden');docSearchInput.oninput=()=>runDocFind();docPrev.onclick=()=>{if(docMatches.length){docMatchIndex=(docMatchIndex-1+docMatches.length)%docMatches.length;scrollDocMatch();}};docNext.onclick=()=>{if(docMatches.length){docMatchIndex=(docMatchIndex+1)%docMatches.length;scrollDocMatch();}};docCopy.onclick=async()=>navigator.clipboard.writeText(docBody.textContent||'');
-
-download.onclick=async()=>{const p=loadPath.value.trim();if(!p)return;const r=await tool('create_temporary_download_link',{path:p});const text=textFrom(r);show(text);const url=extractUrl(text);if(url&&confirm('Open the temporary download link now?'))window.open(url,'_blank');};
-previewMove.onclick=async()=>{if(!moveFrom.value.trim()||!moveTo.value.trim())return;const r=await tool('move_item',{source:moveFrom.value.trim(),destination_folder:moveTo.value.trim(),confirmed:false});const text=textFrom(r);show(text);movePreview.innerHTML=`<pre>${esc(text)}</pre><div class="actions"><button id="confirmMove" class="primary">Confirm move</button><button id="cancelMove">Cancel</button></div>`;movePreview.classList.remove('hidden');confirmMove.onclick=async()=>{if(!confirm('Execute this exact move?'))return;const done=await tool('move_item',{source:moveFrom.value.trim(),destination_folder:moveTo.value.trim(),confirmed:true});show(textFrom(done));movePreview.classList.add('hidden');browse.click();};cancelMove.onclick=()=>movePreview.classList.add('hidden');};
-uploadLink.onclick=async()=>{const r=await tool('create_upload_link',{destination:uploadDestination.value.trim()||'_sorter'});const text=textFrom(r);show(text);uploadUrl.value=extractUrl(text);uploadResult.classList.toggle('hidden',!uploadUrl.value);};
-openUpload.onclick=()=>{if(uploadUrl.value)window.open(uploadUrl.value,'_blank');};copyUpload.onclick=async()=>{if(uploadUrl.value)await navigator.clipboard.writeText(uploadUrl.value);};
-
-searchFiles.onclick=async()=>{const q=fileSearch.value.trim();if(!q)return;const r=await tool('search_files',{query:q,subpath:folder.value.trim()});const text=textFrom(r);show(text);browser.innerHTML='';for(const line of text.split('\n').filter(Boolean)){const pathValue=line.split(':')[0];const row=document.createElement('div');row.className='file';row.innerHTML=`<span>🔎</span><span>${esc(line)}</span><span class="file-actions"><button>Select</button></span>`;row.onclick=()=>selectPath(pathValue,row);browser.appendChild(row);}};
-createFolder.onclick=async()=>{const p=newFolderPath.value.trim();if(!p)return;if(!confirm(`Create folder ${p}?`))return;const r=await tool('mkdir',{subpath:p});show(textFrom(r));newFolderPath.value='';browse.click();};
-trashItem.onclick=async()=>{const p=loadPath.value.trim()||moveFrom.value.trim();if(!p)return;if(!confirm(`Move ${p} to trash?`))return;const r=await tool('move_to_trash',{filepath:p});show(textFrom(r));loadPath.value='';moveFrom.value='';browse.click();};
-sizeCompact.onclick=()=>setSize('large');sizeLarge.onclick=()=>setSize('large');sizeFull.onclick=()=>setSize('fullscreen');
-
-serverStatus.onclick=async()=>{setTab('system');const r=await callTool('server_status',{});show(textFrom(r));};
-window.addEventListener('message',e=>{if(e.source!==window.parent)return;const m=e.data;if(!m||m.jsonrpc!=='2.0')return;if(m.id&&pending.has(m.id)){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(m.error):p.resolve(m.result);return;}if(m.method==='ui/notifications/tool-result')render(m.params?.structuredContent);});
-if(window.openai?.toolOutput)render(window.openai.toolOutput);
-
-try{const saved=JSON.parse(localStorage.getItem('hiveUi')||'{}');if(saved.folder)folder.value=saved.folder;if(saved.tab)setTab(saved.tab);setSize('large');}catch{}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelector('.card').classList.remove('fullscreen');docViewer.classList.remove('fullscreen');}if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='f'&&!docViewer.classList.contains('hidden')){e.preventDefault();docSearchBar.classList.remove('hidden');docSearchInput.focus();}});
-
-
-const hiveCloseBtn=document.getElementById('hiveClose');
-const hiveReopenBtn=document.getElementById('hiveReopen');
-hiveCloseBtn?.addEventListener('click',()=>{document.querySelector('.card')?.classList.add('closed');hiveReopenBtn?.classList.remove('hidden');callTool('hive_ui',{action:'close'}).catch(()=>{});});
-hiveReopenBtn?.addEventListener('click',()=>{document.querySelector('.card')?.classList.remove('closed');hiveReopenBtn?.classList.add('hidden');setSize('large');callTool('hive_ui',{action:'open',screen:'startup'}).catch(()=>{});});
-
+start.onclick=async()=>{if(!project.value)return alert('Select a project.');const r=await tool('startup',{project:project.value,loadstrength:loadstrength.value,selectedFiles:[]});strength.textContent=loadstrength.value.toUpperCase();await refreshContextData();setTab('context');};
+mega.onclick=async()=>{if(!project.value)return alert('Select a project.');if(!confirm('Load every readable non-Archive file under 0. Core?'))return;await tool('startup',{project:project.value,loadstrength:'high',mega:true,selectedFiles:[]});await refreshContextData();setTab('context');};
+openFolder.onclick=()=>loadFolder(folderChoice.value);refreshFiles.onclick=()=>loadFolder(currentPath);
+itemSelect.ondblclick=()=>{const option=itemSelect.selectedOptions[0];if(option?.dataset.type==='dir')loadFolder(option.value);};
+previewSelected.onclick=async()=>{const paths=selectedValues(itemSelect);if(paths.length!==1)return showMessage('Select exactly one file to preview.');const entry=currentEntries.find(e=>e.path===paths[0]);if(entry?.type==='dir')return loadFolder(entry.path);const r=await tool('preview_file',{filepath:paths[0]});const d=r.structuredContent?.document;filePreview.textContent=(d?.text||textFrom(r)||'(no preview)').slice(0,3500);filePreview.classList.remove('hidden');};
+moveSelected.onclick=async()=>{const paths=selectedValues(itemSelect);if(!paths.length)return showMessage('Select one or more items.');const destination=destinationChoice.value;for(const source of paths){await tool('move_item',{source,destination_folder:destination,confirmed:true});}showMessage(`Moved ${paths.length} item${paths.length===1?'':'s'}.`);loadFolder(currentPath);};
+trashSelected.onclick=async()=>{const paths=selectedValues(itemSelect);if(!paths.length)return showMessage('Select one or more items.');if(!confirm(`Move ${paths.length} selected item(s) to trash?`))return;for(const filepath of paths){await tool('move_to_trash',{filepath});}showMessage(`Moved ${paths.length} item${paths.length===1?'':'s'} to trash.`);loadFolder(currentPath);};
+renameSelected.onclick=async()=>{const paths=selectedValues(itemSelect);const newName=renameName.value.trim();if(paths.length!==1)return showMessage('Select exactly one item to rename.');if(!newName||newName.includes('/')||newName.includes('\\'))return showMessage('Enter a new name only, not a full path.');await tool('move_item',{source:paths[0],destination_folder:currentPath,new_name:newName,confirmed:true});renameName.value='';showMessage('Renamed.');loadFolder(currentPath);};
+refreshContext.onclick=refreshContextData;unloadSelected.onclick=async()=>{for(const filepath of selectedValues(activeSelect)){await callTool('unload_context_file',{filepath});}refreshContextData();};clearContext.onclick=async()=>{if(!confirm('Clear all unpinned context?'))return;await callTool('clear_active_context',{});refreshContextData();};
+serverStatus.onclick=async()=>{const r=await tool('get_server_status',{}).catch(()=>tool('server_status',{}));statusOutput.textContent=textFrom(r)||JSON.stringify(r.structuredContent||{},null,2);statusOutput.classList.remove('hidden');};
+window.addEventListener('message',e=>{const m=e.data;if(!m)return;if(m.id&&pending.has(m.id)){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(new Error(m.error.message||'RPC error')):p.resolve(m.result);}});
 </script>
 </body>
 </html>
