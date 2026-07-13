@@ -15,7 +15,7 @@ const resourceRegistered = new WeakSet();
 const extraToolsRegistered = new WeakSet();
 const DEFAULT_PUBLIC_ORIGIN = "https://mcp.incendiarynetworks.cc";
 const activeContext = new Map();
-const CONTEXT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CONTEXT_TTL_MS = null;
 let capturedLoadFileHandler = null;
 const HIVE_SCREENS = ["startup", "browser", "viewer", "context", "vent", "settings", "permissions", "search", "move", "upload"];
 const HIVE_MODALS = ["permissions", "move", "info", "upload", "delete"];
@@ -91,15 +91,7 @@ async function readConfig() {
   }
 }
 
-function pruneExpiredContext() {
-  const now = Date.now();
-  for (const [key, file] of activeContext) {
-    if (!file.pinned && file.expiresAt && file.expiresAt <= now) activeContext.delete(key);
-  }
-}
-
 function contextArray() {
-  pruneExpiredContext();
   return [...activeContext.values()].sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.path.localeCompare(b.path));
 }
 
@@ -138,7 +130,7 @@ function trackFile(filepath, characters, source = "manual", truncated = false, p
     pinned: !!pinned || existingPinned,
     loadedAt: new Date(now).toISOString(),
     lastAccessedAt: new Date(now).toISOString(),
-    expiresAt: (!!pinned || existingPinned) ? null : now + CONTEXT_TTL_MS,
+    expiresAt: null,
   });
 }
 
@@ -365,7 +357,7 @@ async function replayActiveContext() {
       const content = await readableStartupText(file.path);
       const now = Date.now();
       file.lastAccessedAt = new Date(now).toISOString();
-      if (!file.pinned) file.expiresAt = now + CONTEXT_TTL_MS;
+      file.expiresAt = null;
       blocks.push(`===== ${file.path} =====
 ${content}`);
     } catch (error) {
