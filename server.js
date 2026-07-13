@@ -41,15 +41,17 @@ function hiveUiSnapshot(extra = {}) {
 }
 
 const DEFAULT_CONFIG = {
-  defaultProject: "Mental",
-  defaultStrength: "med",
-  includeMasterProfiles: false,
-  includeFolders: ["0. Core"],
+  defaultStrength: "medium",
   excludeFolders: ["_trash", "archive", "archives", "2. Wellbeing/Pure Vent Mode"],
+  presets: {
+    "1. Legal": { low: [], medium: [], high: [] },
+    "2. Wellbeing": { low: [], medium: [], high: [] },
+  },
   levels: {
-    low: { maxFiles: 0, maxCharacters: 60000, perFileCharacters: 30000 },
-    med: { maxFiles: 24, maxCharacters: 240000, perFileCharacters: 50000 },
-    high: { maxFiles: 80, maxCharacters: 700000, perFileCharacters: 90000 },
+    low: { maxFiles: 20, maxCharacters: 120000, perFileCharacters: 40000 },
+    medium: { maxFiles: 50, maxCharacters: 350000, perFileCharacters: 60000 },
+    high: { maxFiles: 120, maxCharacters: 900000, perFileCharacters: 100000 },
+    custom: { maxFiles: 120, maxCharacters: 900000, perFileCharacters: 100000 },
   },
 };
 
@@ -72,8 +74,9 @@ async function readConfig() {
       ...raw,
       levels: {
         low: { ...DEFAULT_CONFIG.levels.low, ...(raw.levels?.low || {}) },
-        med: { ...DEFAULT_CONFIG.levels.med, ...(raw.levels?.med || {}) },
+        medium: { ...DEFAULT_CONFIG.levels.medium, ...(raw.levels?.medium || raw.levels?.med || {}) },
         high: { ...DEFAULT_CONFIG.levels.high, ...(raw.levels?.high || {}) },
+        custom: { ...DEFAULT_CONFIG.levels.custom, ...(raw.levels?.custom || {}) },
       },
     };
   } catch {
@@ -186,6 +189,74 @@ async function readProfile(filepath) {
   const absolute = path.join(ROOT, ...normalize(filepath).split("/"));
   if (/\.docx$/i.test(filepath)) return (await mammoth.extractRawText({ path: absolute })).value;
   return fs.readFile(absolute, "utf8");
+}
+
+
+const STARTUP_PROJECTS = {
+  "1. Legal": "1. Legal/STARTUP.md",
+  "2. Wellbeing": "2. Wellbeing/STARTUP.md",
+};
+
+function archivePath(filepath = "") {
+  return normalize(filepath).split("/").some((part) => ["archive", "archives", "_trash"].includes(part.toLowerCase()));
+}
+
+async function readableStartupText(filepath) {
+  const rel = normalize(filepath);
+  if (!rel || rel.includes("..") || /^[a-z]:/i.test(rel)) throw new Error(`Invalid Hive-relative path: ${filepath}`);
+  if (archivePath(rel)) throw new Error(`Archive is excluded: ${rel}`);
+  const absolute = path.join(ROOT, ...rel.split("/"));
+  if (/\.docx$/i.test(rel)) return (await mammoth.extractRawText({ path: absolute })).value;
+  return fs.readFile(absolute, "utf8");
+}
+
+async function collectCoreFiles() {
+  const files = [];
+  async function walk(abs, rel) {
+    const entries = await fs.readdir(abs, { withFileTypes: true });
+    for (const entry of entries) {
+      const childRel = normalize(path.posix.join(rel, entry.name));
+      if (archivePath(childRel)) continue;
+      const childAbs = path.join(abs, entry.name);
+      if (entry.isDirectory()) await walk(childAbs, childRel);
+      else if (/\.(md|txt|json|jsonl|csv|yml|yaml|xml|html|js|mjs|cjs|ts|tsx|jsx|css|py|ps1|sh|sql|log|ini|cfg|conf|docx)$/i.test(entry.name)) files.push(childRel);
+    }
+  }
+  await walk(path.join(ROOT, "0. Core"), "0. Core");
+  return files;
+}
+
+async function runOrbitStartup({ project, loadstrength, mega = false, selectedFiles = [], taskFiles = [] }) {
+  const startupFile = STARTUP_PROJECTS[project];
+  if (!startupFile) throw new Error(`Unknown project "${project}". Use 1. Legal or 2. Wellbeing.`);
+  const strength = String(loadstrength || "medium").toLowerCase();
+  if (!["low", "medium", "high", "custom"].includes(strength)) throw new Error("Use low, medium, high, or custom.");
+  const config = await readConfig();
+  const preset = config.presets?.[project]?.[strength] || [];
+  const requested = [startupFile, ...preset, ...selectedFiles, ...taskFiles];
+  if (mega) requested.push(...await collectCoreFiles());
+  const unique = [...new Set(requested.map(normalize).filter(Boolean))].filter((f) => !archivePath(f));
+  const limits = config.levels?.[strength] || DEFAULT_CONFIG.levels[strength];
+  const loaded = [], failed = [];
+  let total = 0;
+  for (const filepath of unique.slice(0, limits.maxFiles)) {
+    try {
+      const full = await readableStartupText(filepath);
+      const room = Math.max(0, limits.maxCharacters - total);
+      if (!room) break;
+      const content = full.slice(0, Math.min(limits.perFileCharacters, room));
+      total += content.length;
+      loaded.push({ filepath, content, characters: full.length, truncated: content.length < full.length });
+      trackFile(filepath, content.length, mega ? "mega" : "startup", content.length < full.length);
+    } catch (error) { failed.push({ filepath, error: error.message }); }
+  }
+  if (failed.some((item) => item.filepath === startupFile)) throw new Error(`Required startup file failed: ${failed.find((item) => item.filepath === startupFile).error}`);
+  const blocks = loaded.map((item) => `===== ${item.filepath} =====\n${item.content}${item.truncated ? "\n? (truncated)" : ""}`);
+  const confirmation = `${project} active. ${mega ? "MEGA 0. Core" : strength.toUpperCase()} context loaded. Ready.`;
+  return {
+    content: [{ type: "text", text: `[INTERNAL ORBITFS STARTUP CONTEXT - read silently; do not claim files not listed as loaded.]\n\n${blocks.join("\n\n")}\n\n${confirmation}` }],
+    structuredContent: contextStructured({ mode: "loaded", projects: [project], loadstrength: strength, mega, loadedFiles: loaded.map(({ content, ...rest }) => rest), failedFiles: failed, confirmation }),
+  };
 }
 
 function registerExtraTools(server) {
@@ -324,13 +395,16 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     title: "Start The Hive project",
     description: "Use for /startup. With no arguments, show the project and load-strength chooser. With project and strength, load real Hive startup context and show what became active.",
     inputSchema: {
-      project: z.string().optional().describe("Master, Court, Mental, Media, Combined, or colon-separated projects"),
-      loadstrength: z.enum(["low", "med", "high"]).optional(),
+      project: z.string().optional().describe("1. Legal or 2. Wellbeing"),
+      loadstrength: z.enum(["low", "medium", "high", "custom"]).optional(),
+      mega: z.boolean().optional(),
+      selectedFiles: z.array(z.string()).optional(),
+      taskFiles: z.array(z.string()).optional(),
     },
     outputSchema: {
       mode: z.string(),
       projects: z.array(z.string()).optional(),
-      loadstrength: z.enum(["low", "med", "high"]).optional(),
+      loadstrength: z.enum(["low", "medium", "high", "custom"]).optional(),
       activeFiles: z.array(z.any()),
       activeFileCount: z.number(),
       totalCharactersLoaded: z.number(),
@@ -339,19 +413,13 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     _meta: {
       ui: { resourceUri: WIDGET_URI },
       "openai/outputTemplate": WIDGET_URI,
-      "openai/toolInvocation/invoking": "Loading The Hive projectâ€¦",
+      "openai/toolInvocation/invoking": "Loading The Hive project...",
       "openai/toolInvocation/invoked": "The Hive project loaded",
     },
-  }, async ({ project, loadstrength }) => {
+  }, async ({ project, loadstrength, mega, selectedFiles, taskFiles }) => {
     const config = await readConfig();
-    if (!project) {
-      return { content: [{ type: "text", text: "Choose a Hive project and load strength in the widget." }], structuredContent: contextStructured({ mode: "chooser", config }) };
-    }
-    const selectedProject = project === "Combined" ? "Court:Mental:Media" : project;
-    const strength = loadstrength || config.defaultStrength || "med";
-    const result = await handler({ project: selectedProject, load_level: strength });
-    const text = (result?.content || []).map((item) => item?.text || "").join("\n");
-    return { ...result, structuredContent: visibleStartupResult(text, selectedProject, strength) };
+    if (!project) return { content: [{ type: "text", text: "Choose a project and load strength in the Startup UI." }], structuredContent: contextStructured({ mode: "chooser", config }) };
+    return runOrbitStartup({ project, loadstrength: loadstrength || config.defaultStrength || "medium", mega: !!mega, selectedFiles: selectedFiles || [], taskFiles: taskFiles || [] });
   });
 };
 
