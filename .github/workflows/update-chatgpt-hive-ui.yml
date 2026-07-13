@@ -1,0 +1,174 @@
+name: Update ChatGPT Hive UI
+
+on:
+  push:
+    paths:
+      - .github/workflows/update-chatgpt-hive-ui.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Patch ChatGPT widget and status command
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          server = Path('server.js')
+          source = server.read_text(encoding='utf-8')
+
+          marker = 'function registerExtraTools(server) {'
+          helpers = r'''
+async function orbitUiHealthCheck(url, timeoutMs = 3500) {
+  try {
+    const response = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
+    return { online: response.status >= 200 && response.status < 500, statusCode: response.status };
+  } catch (error) {
+    return { online: false, error: error.message };
+  }
+}
+
+async function buildOrbitUiServerStatus() {
+  const cloudBase = (process.env.PUBLIC_BASE_URL || DEFAULT_PUBLIC_ORIGIN).replace(/\/$/, "");
+  const panelBase = `http://127.0.0.1:${process.env.PANEL_PORT || 4000}`;
+  const sorterBase = (process.env.SORTER_URL || "http://127.0.0.1:4055").replace(/\/$/, "");
+  const [cloud, panel, sorter] = await Promise.all([
+    orbitUiHealthCheck(`${cloudBase}/api/ping`),
+    orbitUiHealthCheck(panelBase),
+    orbitUiHealthCheck(`${sorterBase}/api/status`, 2200),
+  ]);
+  return {
+    mcp: { online: true, label: "Online" },
+    cloud: { ...cloud, label: cloud.online ? "Online" : "Offline" },
+    panel: { ...panel, label: panel.online ? "Online" : "Offline" },
+    sorter: { ...sorter, label: sorter.online ? "Online" : "When will this ever come 🤔" },
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+'''
+          if 'async function buildOrbitUiServerStatus()' not in source:
+              if marker not in source:
+                  raise SystemExit('registerExtraTools marker missing')
+              source = source.replace(marker, helpers + marker, 1)
+
+          tool_marker = '  server.registerTool("show_hive", {'
+          tool = r'''  server.registerTool("server_status_ui", {
+    title: "SERVER-STATUS",
+    description: "Use for /server-status. Open the Hive Server Status tab in ChatGPT and show MCP, Cloud, Panel, and Sorter status.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    _meta: uiMeta,
+  }, async () => {
+    const serverStatus = await buildOrbitUiServerStatus();
+    hiveUiState.currentScreen = "settings";
+    hiveUiState.open = true;
+    return {
+      content: [{ type: "text", text: "Server Status opened in the Hive UI." }],
+      structuredContent: contextStructured({ mode: "server_status", serverStatus }),
+    };
+  });
+
+'''
+          if 'server.registerTool("server_status_ui"' not in source:
+              if tool_marker not in source:
+                  raise SystemExit('show_hive marker missing')
+              source = source.replace(tool_marker, tool + tool_marker, 1)
+          server.write_text(source, encoding='utf-8')
+
+          widget = Path('app/widget/index.html')
+          html = widget.read_text(encoding='utf-8')
+          html = html.replace('<span class="cmd">/showcp</span><span class="cmd">/startup</span><span class="cmd">/context</span><span class="cmd">/files</span><span class="cmd">/status</span>', '<span class="cmd">/showcp</span><span class="cmd">/startup</span><span class="cmd">/context</span><span class="cmd">/files</span><span class="cmd">/server-status</span>')
+          html = html.replace('<button data-tab="system">Status</button>', '<button data-tab="system">Server Status</button>')
+          html = html.replace('>Preview</button>', '>Quick view</button>')
+
+          old_context = '''  <section id="context" class="panel">
+    <div id="stats" class="stats"><span class="pill">0 active</span></div>
+    <label class="field">Active context files<select id="activeSelect" multiple></select></label>
+    <div class="context-actions">
+      <button id="refreshContext" class="button">Refresh</button>
+      <button id="unloadSelected" class="button">Unload selected</button>
+      <button id="clearContext" class="button danger">Clear unpinned context</button>
+    </div>
+  </section>'''
+          new_context = '''  <section id="context" class="panel">
+    <div id="stats" class="stats"><span class="pill">0 active</span></div>
+    <label class="field">Load file into context<input id="contextLoadPath" placeholder="Hive-relative file path"></label>
+    <button id="loadContextFile" class="button primary full-button">Load file</button>
+    <label class="field">Active context files<select id="activeSelect" multiple></select></label>
+    <div class="context-actions">
+      <button id="refreshContext" class="button">Refresh</button>
+      <button id="unloadSelected" class="button">Unload selected</button>
+      <button id="clearContext" class="button danger">Clear unpinned context</button>
+    </div>
+  </section>'''
+          if old_context in html:
+              html = html.replace(old_context, new_context, 1)
+
+          old_status = '''  <section id="system" class="panel">
+    <div class="status-card">
+      <div class="status-line"><strong>Hive MCP status</strong><span class="pill"><span class="dot"></span>Check</span></div>
+      <p class="muted">Checks the Hive MCP and connected services.</p>
+      <button id="serverStatus" class="button primary" style="width:100%">Refresh status</button>
+      <div id="statusOutput" class="preview hidden"></div>
+    </div>
+  </section>'''
+          new_status = '''  <section id="system" class="panel">
+    <div class="status-card">
+      <div class="status-head"><strong>Server Status</strong><button id="serverStatus" class="button">Refresh</button></div>
+      <div class="status-grid">
+        <div class="service-status" data-service="mcp"><span>MCP</span><strong id="statusMcp">Checking…</strong></div>
+        <div class="service-status" data-service="cloud"><span>Cloud</span><strong id="statusCloud">Checking…</strong></div>
+        <div class="service-status" data-service="panel"><span>Panel</span><strong id="statusPanel">Checking…</strong></div>
+        <div class="service-status" data-service="sorter"><span>Sorter</span><strong id="statusSorter">Checking…</strong></div>
+      </div>
+      <div id="statusOutput" class="message hidden"></div>
+    </div>
+  </section>'''
+          if old_status in html:
+              html = html.replace(old_status, new_status, 1)
+
+          css_marker = '</style>'
+          extra_css = '''
+.full-button{width:100%;margin-top:7px}.status-head{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:8px}.status-head .button{padding:7px 10px;flex:0 0 auto}.status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.service-status{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;padding:9px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);font-size:11px;overflow:hidden}.service-status span{color:var(--muted);flex:0 0 auto}.service-status strong{text-align:right;overflow-wrap:anywhere;word-break:break-word;line-height:1.25}.service-status.online strong{color:#65d6a1}.service-status.offline strong{color:#ff8292}.message{overflow-wrap:anywhere;word-break:break-word}.panel,.status-card,.status-grid{max-width:100%}@media(max-width:360px){.tabs button{font-size:9px;padding:7px 1px}.status-grid{grid-template-columns:1fr}.commands{gap:3px}.cmd{font-size:8px;padding:4px 6px}}
+'''
+          if '.status-grid{' not in html:
+              html = html.replace(css_marker, extra_css + css_marker, 1)
+
+          old_handler = "serverStatus.onclick=async()=>{const response=await tool('get_server_status',{}).catch(()=>tool('server_status',{}));statusOutput.textContent=textFrom(response)||JSON.stringify(response.structuredContent||{},null,2);statusOutput.classList.remove('hidden');};"
+          new_handler = """function paintService(id,data){const el=document.getElementById(id);const card=el.closest('.service-status');const online=data?.online===true;card.classList.toggle('online',online);card.classList.toggle('offline',!online);el.textContent=data?.label||(online?'Online':'Offline');}\nserverStatus.onclick=async()=>{try{const response=await tool('server_status_ui',{});const data=response.structuredContent?.serverStatus||{};paintService('statusMcp',data.mcp);paintService('statusCloud',data.cloud);paintService('statusPanel',data.panel);paintService('statusSorter',data.sorter);statusOutput.textContent=data.checkedAt?`Checked ${new Date(data.checkedAt).toLocaleTimeString()}`:'';statusOutput.classList.toggle('hidden',!statusOutput.textContent);}catch(error){statusOutput.textContent=error.message||String(error);statusOutput.classList.remove('hidden');}};\nloadContextFile.onclick=async()=>{const filepath=contextLoadPath.value.trim();if(!filepath)return;await tool('load_file',{filepath});contextLoadPath.value='';await refreshContextData();};"""
+          if old_handler in html:
+              html = html.replace(old_handler, new_handler, 1)
+          else:
+              raise SystemExit('status handler marker missing')
+
+          html = html.replace("if(name==='context')refreshContextData();", "if(name==='context')refreshContextData();if(name==='system')serverStatus.click();")
+          widget.write_text(html, encoding='utf-8')
+          PY
+      - name: Verify syntax
+        run: |
+          node --check server.js
+          python - <<'PY'
+          from pathlib import Path
+          html=Path('app/widget/index.html').read_text(encoding='utf-8')
+          script=html.split('<script>',1)[1].split('</script>',1)[0]
+          Path('/tmp/widget.js').write_text(script,encoding='utf-8')
+          PY
+          node --check /tmp/widget.js
+      - name: Commit update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server.js app/widget/index.html
+          git diff --cached --quiet || git commit -m "Update ChatGPT Hive tabs context files and server status UI"
+          git push
