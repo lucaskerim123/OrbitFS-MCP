@@ -44,14 +44,17 @@ const DEFAULT_CONFIG = {
   defaultStrength: "medium",
   excludeFolders: ["_trash", "archive", "archives", "2. Wellbeing/Pure Vent Mode"],
   presets: {
-    "1. Legal": { low: [], medium: [], high: [] },
-    "2. Wellbeing": { low: [], medium: [], high: [] },
+    "1. Legal": { low: [], medium: [], high: [], custom1: [], custom2: [] },
+    "2. Wellbeing": { low: [], medium: [], high: [], custom1: [], custom2: [] },
   },
   levels: {
     low: { maxFiles: 20, maxCharacters: 120000, perFileCharacters: 40000 },
     medium: { maxFiles: 50, maxCharacters: 350000, perFileCharacters: 60000 },
     high: { maxFiles: 120, maxCharacters: 900000, perFileCharacters: 100000 },
-    custom: { maxFiles: 120, maxCharacters: 900000, perFileCharacters: 100000 },
+    custom1: { maxFiles: 180, maxCharacters: 1400000, perFileCharacters: 140000 },
+    custom2: { maxFiles: 260, maxCharacters: 2200000, perFileCharacters: 180000 },
+    custom: { maxFiles: 260, maxCharacters: 2200000, perFileCharacters: 180000 },
+    mega: { maxFiles: 10000, maxCharacters: 12000000, perFileCharacters: 1000000 },
   },
 };
 
@@ -76,7 +79,10 @@ async function readConfig() {
         low: { ...DEFAULT_CONFIG.levels.low, ...(raw.levels?.low || {}) },
         medium: { ...DEFAULT_CONFIG.levels.medium, ...(raw.levels?.medium || raw.levels?.med || {}) },
         high: { ...DEFAULT_CONFIG.levels.high, ...(raw.levels?.high || {}) },
+        custom1: { ...DEFAULT_CONFIG.levels.custom1, ...(raw.levels?.custom1 || {}) },
+        custom2: { ...DEFAULT_CONFIG.levels.custom2, ...(raw.levels?.custom2 || {}) },
         custom: { ...DEFAULT_CONFIG.levels.custom, ...(raw.levels?.custom || {}) },
+        mega: { ...DEFAULT_CONFIG.levels.mega, ...(raw.levels?.mega || {}) },
       },
     };
   } catch {
@@ -214,8 +220,30 @@ const STARTUP_ALWAYS_FILES = [
   "0. Core/Master Profiles/Laura_Woods_Master_Profile.docx",
 ];
 
+
+function excludedStartupPath(filepath = "") {
+  return normalize(filepath).split("/").some((part) => ["archive", "archives", "trash", "_trash", "_sorter"].includes(part.toLowerCase()));
+}
+
 function archivePath(filepath = "") {
-  return normalize(filepath).split("/").some((part) => ["archive", "archives", "_trash"].includes(part.toLowerCase()));
+  return excludedStartupPath(filepath);
+}
+
+async function resolveStartupPath(filepath) {
+  const rel = normalize(filepath);
+  const absolute = path.join(ROOT, ...rel.split("/"));
+  try {
+    const stat = await fs.stat(absolute);
+    if (stat.isFile()) return rel;
+  } catch {}
+
+  const folder = path.posix.dirname(rel);
+  const wanted = path.posix.basename(rel).replace(/\.[^.]+$/, "").toLowerCase();
+  const folderAbsolute = path.join(ROOT, ...folder.split("/"));
+  const entries = await fs.readdir(folderAbsolute, { withFileTypes: true });
+  const match = entries.find((entry) => entry.isFile() && entry.name.replace(/\.[^.]+$/, "").toLowerCase() === wanted);
+  if (!match) throw new Error(`Required startup file not found: ${rel}`);
+  return normalize(path.posix.join(folder, match.name));
 }
 
 async function resolveStartupPath(filepath) {
@@ -244,19 +272,21 @@ async function readableStartupText(filepath) {
   return fs.readFile(absolute, "utf8");
 }
 
-async function collectCoreFiles() {
+async function collectMegaFiles() {
   const files = [];
+  const roots = ["0. Core", "1. Legal", "2. Wellbeing"];
   async function walk(abs, rel) {
-    const entries = await fs.readdir(abs, { withFileTypes: true });
+    let entries;
+    try { entries = await fs.readdir(abs, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
       const childRel = normalize(path.posix.join(rel, entry.name));
-      if (archivePath(childRel)) continue;
+      if (excludedStartupPath(childRel)) continue;
       const childAbs = path.join(abs, entry.name);
       if (entry.isDirectory()) await walk(childAbs, childRel);
       else if (/\.(md|txt|json|jsonl|csv|yml|yaml|xml|html|js|mjs|cjs|ts|tsx|jsx|css|py|ps1|sh|sql|log|ini|cfg|conf|docx)$/i.test(entry.name)) files.push(childRel);
     }
   }
-  await walk(path.join(ROOT, "0. Core"), "0. Core");
+  for (const root of roots) await walk(path.join(ROOT, root), root);
   return files;
 }
 
@@ -264,7 +294,7 @@ async function runOrbitStartup({ project, loadstrength, mega = false, selectedFi
   const startupFile = STARTUP_PROJECTS[project];
   if (!startupFile) throw new Error(`Unknown project "${project}". Use 1. Legal or 2. Wellbeing.`);
   const strength = String(loadstrength || "medium").toLowerCase();
-  if (!["low", "medium", "high", "custom"].includes(strength)) throw new Error("Use low, medium, high, or custom.");
+  if (!["low", "medium", "high", "custom1", "custom2", "custom"].includes(strength)) throw new Error("Use low, medium, high, custom1, custom2, or custom.");
 
   const config = await readConfig();
   const preset = config.presets?.[project]?.[strength] || [];
@@ -274,11 +304,12 @@ async function runOrbitStartup({ project, loadstrength, mega = false, selectedFi
 
   const mandatoryKeys = new Set(mandatoryResolved.map((filepath) => normalize(filepath).toLowerCase()));
   const optionalRequested = [...preset, ...selectedFiles, ...taskFiles];
-  if (mega) optionalRequested.push(...await collectCoreFiles());
+  if (mega) optionalRequested.push(...await collectMegaFiles());
   const optional = [...new Set(optionalRequested.map(normalize).filter(Boolean))]
     .filter((filepath) => !archivePath(filepath) && !mandatoryKeys.has(filepath.toLowerCase()));
 
-  const loaded = [], failed = [];
+  const loaded = [];
+  const failed = [];
   for (const filepath of mandatoryResolved) {
     try {
       const content = await readableStartupText(filepath);
@@ -293,7 +324,9 @@ async function runOrbitStartup({ project, loadstrength, mega = false, selectedFi
     throw new Error(`Required startup context failed: ${detail}`);
   }
 
-  const limits = config.levels?.[strength] || DEFAULT_CONFIG.levels[strength];
+  const limits = mega
+    ? (config.levels?.mega || DEFAULT_CONFIG.levels.mega)
+    : (config.levels?.[strength] || DEFAULT_CONFIG.levels[strength]);
   let optionalTotal = 0;
   for (const filepath of optional.slice(0, limits.maxFiles)) {
     try {
@@ -309,18 +342,10 @@ async function runOrbitStartup({ project, loadstrength, mega = false, selectedFi
     }
   }
 
-  const blocks = loaded.map((item) => `===== ${item.filepath} =====
-${item.content}${item.truncated ? "
-? (truncated)" : ""}`);
-  const confirmation = `${project} active. ${mega ? "MEGA 0. Core" : strength.toUpperCase()} context loaded. Required files loaded fully. Ready.`;
+  const blocks = loaded.map((item) => `===== ${item.filepath} =====\n${item.content}${item.truncated ? "\n? (truncated)" : ""}`);
+  const confirmation = `${project} active. ${mega ? "MEGA 0. Core + 1. Legal + 2. Wellbeing" : strength.toUpperCase()} context loaded. Required files loaded fully. Ready.`;
   return {
-    content: [{ type: "text", text: `[INTERNAL ORBITFS STARTUP CONTEXT - read silently; do not claim files not listed as loaded.]
-
-${blocks.join("
-
-")}
-
-${confirmation}` }],
+    content: [{ type: "text", text: `[INTERNAL ORBITFS STARTUP CONTEXT - read silently; do not claim files not listed as loaded.]\n\n${blocks.join("\n\n")}\n\n${confirmation}` }],
     structuredContent: contextStructured({
       mode: "loaded",
       projects: [project],
@@ -471,7 +496,7 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     description: "Use for /startup. With no arguments, show the project and load-strength chooser. With project and strength, load real Hive startup context and show what became active.",
     inputSchema: {
       project: z.string().optional().describe("1. Legal or 2. Wellbeing"),
-      loadstrength: z.enum(["low", "medium", "high", "custom"]).optional(),
+      loadstrength: z.enum(["low", "medium", "high", "custom1", "custom2", "custom"]).optional(),
       mega: z.boolean().optional(),
       selectedFiles: z.array(z.string()).optional(),
       taskFiles: z.array(z.string()).optional(),
@@ -479,7 +504,7 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     outputSchema: {
       mode: z.string(),
       projects: z.array(z.string()).optional(),
-      loadstrength: z.enum(["low", "medium", "high", "custom"]).optional(),
+      loadstrength: z.enum(["low", "medium", "high", "custom1", "custom2", "custom"]).optional(),
       activeFiles: z.array(z.any()),
       activeFileCount: z.number(),
       totalCharactersLoaded: z.number(),
