@@ -197,8 +197,42 @@ const STARTUP_PROJECTS = {
   "2. Wellbeing": "2. Wellbeing/STARTUP.md",
 };
 
+const STARTUP_SYSTEM_FILES = [
+  "_system/Rules/load_order.md",
+  "_system/Rules/project_rules.md",
+  "_system/Rules/saving_rules.md",
+  "_system/Rules/commands.md",
+  "_system/Index/file_index.json",
+];
+
+const STARTUP_ALWAYS_FILES = [
+  "0. Core/Master Logs/Master_Incident_Log_v1",
+  "0. Core/Master Logs/Master_Incident_Log_v2",
+  "0. Core/Master Logs/Mental_Health_Profiles_Core",
+  "0. Core/Master Logs/Master_Relationship_Timeline",
+  "0. Core/Master Profiles/Luke_Kerim_Master_Profile.docx",
+  "0. Core/Master Profiles/Laura_Woods_Master_Profile.docx",
+];
+
 function archivePath(filepath = "") {
   return normalize(filepath).split("/").some((part) => ["archive", "archives", "_trash"].includes(part.toLowerCase()));
+}
+
+async function resolveStartupPath(filepath) {
+  const rel = normalize(filepath);
+  const absolute = path.join(ROOT, ...rel.split("/"));
+  try {
+    const stat = await fs.stat(absolute);
+    if (stat.isFile()) return rel;
+  } catch {}
+
+  const folder = path.posix.dirname(rel);
+  const wanted = path.posix.basename(rel).replace(/\.[^.]+$/, "").toLowerCase();
+  const folderAbsolute = path.join(ROOT, ...folder.split("/"));
+  const entries = await fs.readdir(folderAbsolute, { withFileTypes: true });
+  const match = entries.find((entry) => entry.isFile() && entry.name.replace(/\.[^.]+$/, "").toLowerCase() === wanted);
+  if (!match) throw new Error(`Required startup file not found: ${rel}`);
+  return normalize(path.posix.join(folder, match.name));
 }
 
 async function readableStartupText(filepath) {
@@ -231,31 +265,72 @@ async function runOrbitStartup({ project, loadstrength, mega = false, selectedFi
   if (!startupFile) throw new Error(`Unknown project "${project}". Use 1. Legal or 2. Wellbeing.`);
   const strength = String(loadstrength || "medium").toLowerCase();
   if (!["low", "medium", "high", "custom"].includes(strength)) throw new Error("Use low, medium, high, or custom.");
+
   const config = await readConfig();
   const preset = config.presets?.[project]?.[strength] || [];
-  const requested = [startupFile, ...preset, ...selectedFiles, ...taskFiles];
-  if (mega) requested.push(...await collectCoreFiles());
-  const unique = [...new Set(requested.map(normalize).filter(Boolean))].filter((f) => !archivePath(f));
-  const limits = config.levels?.[strength] || DEFAULT_CONFIG.levels[strength];
+  const mandatoryRequested = [startupFile, ...STARTUP_SYSTEM_FILES, ...STARTUP_ALWAYS_FILES];
+  const mandatoryResolved = [];
+  for (const filepath of mandatoryRequested) mandatoryResolved.push(await resolveStartupPath(filepath));
+
+  const mandatoryKeys = new Set(mandatoryResolved.map((filepath) => normalize(filepath).toLowerCase()));
+  const optionalRequested = [...preset, ...selectedFiles, ...taskFiles];
+  if (mega) optionalRequested.push(...await collectCoreFiles());
+  const optional = [...new Set(optionalRequested.map(normalize).filter(Boolean))]
+    .filter((filepath) => !archivePath(filepath) && !mandatoryKeys.has(filepath.toLowerCase()));
+
   const loaded = [], failed = [];
-  let total = 0;
-  for (const filepath of unique.slice(0, limits.maxFiles)) {
+  for (const filepath of mandatoryResolved) {
+    try {
+      const content = await readableStartupText(filepath);
+      loaded.push({ filepath, content, characters: content.length, truncated: false, mandatory: true });
+      trackFile(filepath, content.length, "startup-required", false);
+    } catch (error) {
+      failed.push({ filepath, error: error.message, mandatory: true });
+    }
+  }
+  if (failed.some((item) => item.mandatory)) {
+    const detail = failed.filter((item) => item.mandatory).map((item) => `${item.filepath}: ${item.error}`).join("; ");
+    throw new Error(`Required startup context failed: ${detail}`);
+  }
+
+  const limits = config.levels?.[strength] || DEFAULT_CONFIG.levels[strength];
+  let optionalTotal = 0;
+  for (const filepath of optional.slice(0, limits.maxFiles)) {
     try {
       const full = await readableStartupText(filepath);
-      const room = Math.max(0, limits.maxCharacters - total);
+      const room = Math.max(0, limits.maxCharacters - optionalTotal);
       if (!room) break;
       const content = full.slice(0, Math.min(limits.perFileCharacters, room));
-      total += content.length;
-      loaded.push({ filepath, content, characters: full.length, truncated: content.length < full.length });
+      optionalTotal += content.length;
+      loaded.push({ filepath, content, characters: full.length, truncated: content.length < full.length, mandatory: false });
       trackFile(filepath, content.length, mega ? "mega" : "startup", content.length < full.length);
-    } catch (error) { failed.push({ filepath, error: error.message }); }
+    } catch (error) {
+      failed.push({ filepath, error: error.message, mandatory: false });
+    }
   }
-  if (failed.some((item) => item.filepath === startupFile)) throw new Error(`Required startup file failed: ${failed.find((item) => item.filepath === startupFile).error}`);
-  const blocks = loaded.map((item) => `===== ${item.filepath} =====\n${item.content}${item.truncated ? "\n? (truncated)" : ""}`);
-  const confirmation = `${project} active. ${mega ? "MEGA 0. Core" : strength.toUpperCase()} context loaded. Ready.`;
+
+  const blocks = loaded.map((item) => `===== ${item.filepath} =====
+${item.content}${item.truncated ? "
+? (truncated)" : ""}`);
+  const confirmation = `${project} active. ${mega ? "MEGA 0. Core" : strength.toUpperCase()} context loaded. Required files loaded fully. Ready.`;
   return {
-    content: [{ type: "text", text: `[INTERNAL ORBITFS STARTUP CONTEXT - read silently; do not claim files not listed as loaded.]\n\n${blocks.join("\n\n")}\n\n${confirmation}` }],
-    structuredContent: contextStructured({ mode: "loaded", projects: [project], loadstrength: strength, mega, loadedFiles: loaded.map(({ content, ...rest }) => rest), failedFiles: failed, confirmation }),
+    content: [{ type: "text", text: `[INTERNAL ORBITFS STARTUP CONTEXT - read silently; do not claim files not listed as loaded.]
+
+${blocks.join("
+
+")}
+
+${confirmation}` }],
+    structuredContent: contextStructured({
+      mode: "loaded",
+      projects: [project],
+      loadstrength: strength,
+      mega,
+      alwaysLoadedFiles: mandatoryResolved,
+      loadedFiles: loaded.map(({ content, ...rest }) => rest),
+      failedFiles: failed,
+      confirmation,
+    }),
   };
 }
 
