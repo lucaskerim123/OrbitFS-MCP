@@ -15,6 +15,7 @@ const resourceRegistered = new WeakSet();
 const extraToolsRegistered = new WeakSet();
 const DEFAULT_PUBLIC_ORIGIN = "https://mcp.incendiarynetworks.cc";
 const activeContext = new Map();
+const CONTEXT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 let capturedLoadFileHandler = null;
 const HIVE_SCREENS = ["startup", "browser", "viewer", "context", "vent", "settings", "permissions", "search", "move", "upload"];
 const HIVE_MODALS = ["permissions", "move", "info", "upload", "delete"];
@@ -90,7 +91,15 @@ async function readConfig() {
   }
 }
 
+function pruneExpiredContext() {
+  const now = Date.now();
+  for (const [key, file] of activeContext) {
+    if (!file.pinned && file.expiresAt && file.expiresAt <= now) activeContext.delete(key);
+  }
+}
+
 function contextArray() {
+  pruneExpiredContext();
   return [...activeContext.values()].sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.path.localeCompare(b.path));
 }
 
@@ -117,15 +126,19 @@ function contextStructured(extra = {}) {
   };
 }
 
-function trackFile(filepath, characters, source = "manual", truncated = false) {
+function trackFile(filepath, characters, source = "manual", truncated = false, pinned = false) {
   const key = normalize(filepath);
+  const now = Date.now();
+  const existingPinned = activeContext.get(key)?.pinned || false;
   activeContext.set(key, {
     path: key,
     characters: Number(characters || 0),
     source,
     truncated: !!truncated,
-    pinned: activeContext.get(key)?.pinned || false,
-    loadedAt: new Date().toISOString(),
+    pinned: !!pinned || existingPinned,
+    loadedAt: new Date(now).toISOString(),
+    lastAccessedAt: new Date(now).toISOString(),
+    expiresAt: (!!pinned || existingPinned) ? null : now + CONTEXT_TTL_MS,
   });
 }
 
@@ -216,8 +229,8 @@ const STARTUP_ALWAYS_FILES = [
   "0. Core/Master Logs/Master_Incident_Log_v2",
   "0. Core/Master Logs/Mental_Health_Profiles_Core",
   "0. Core/Master Logs/Master_Relationship_Timeline",
-  "0. Core/Master Profiles/Luke_Kerim_Master_Profile.docx",
-  "0. Core/Master Profiles/Laura_Woods_Master_Profile.docx",
+  "0. Core/Profiles/Master Profiles/Luke_Kerim_Master_Profile.docx",
+  "0. Core/Profiles/Master Profiles/Laura_Woods_Master_Profile.docx",
 ];
 
 
@@ -297,7 +310,7 @@ async function runOrbitStartup({ project, loadstrength, mega = false, selectedFi
     try {
       const content = await readableStartupText(filepath);
       loaded.push({ filepath, content, characters: content.length, truncated: false, mandatory: true });
-      trackFile(filepath, content.length, "startup-required", false);
+      trackFile(filepath, content.length, "startup-required", false, true);
     } catch (error) {
       failed.push({ filepath, error: error.message, mandatory: true });
     }
@@ -326,6 +339,7 @@ async function runOrbitStartup({ project, loadstrength, mega = false, selectedFi
   }
 
   const blocks = loaded.map((item) => `===== ${item.filepath} =====\n${item.content}${item.truncated ? "\n? (truncated)" : ""}`);
+  console.log(JSON.stringify({ ts: new Date().toISOString(), event: "orbit.startup.loaded", project, strength, mega, loaded: loaded.length, failed: failed.length }));
   const confirmation = `${project} active. ${mega ? "MEGA 0. Core + 1. Legal + 2. Wellbeing" : strength.toUpperCase()} context loaded. Required files loaded fully. Ready.`;
   return {
     content: [{ type: "text", text: `[INTERNAL ORBITFS STARTUP CONTEXT - read silently; do not claim files not listed as loaded.]\n\n${blocks.join("\n\n")}\n\n${confirmation}` }],
@@ -339,6 +353,32 @@ async function runOrbitStartup({ project, loadstrength, mega = false, selectedFi
       failedFiles: failed,
       confirmation,
     }),
+  };
+}
+
+async function replayActiveContext() {
+  const files = contextArray().filter((file) => !isBackgroundUiPath(file.path));
+  const blocks = [];
+  const failed = [];
+  for (const file of files) {
+    try {
+      const content = await readableStartupText(file.path);
+      const now = Date.now();
+      file.lastAccessedAt = new Date(now).toISOString();
+      if (!file.pinned) file.expiresAt = now + CONTEXT_TTL_MS;
+      blocks.push(`===== ${file.path} =====
+${content}`);
+    } catch (error) {
+      failed.push({ filepath: file.path, error: error.message });
+    }
+  }
+  return {
+    content: [{ type: "text", text: blocks.length
+      ? `[INTERNAL HIVE ACTIVE CONTEXT - read every file below and continue treating it as active.]
+
+${blocks.join("\n\n")}`
+      : "No active Hive files." }],
+    structuredContent: contextStructured({ replayed: blocks.length, failedFiles: failed }),
   };
 }
 
@@ -408,7 +448,7 @@ function registerExtraTools(server) {
     inputSchema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: uiMeta,
-  }, async () => ({ content: [{ type: "text", text: JSON.stringify(contextStructured(), null, 2) }], structuredContent: contextStructured() }));
+  }, async () => replayActiveContext());
 
   server.registerTool("unload_context_file", {
     title: "Unload Hive context file",
@@ -418,6 +458,8 @@ function registerExtraTools(server) {
     _meta: uiMeta,
   }, async ({ filepath }) => {
     const key = normalize(filepath);
+    const current = activeContext.get(key);
+    if (current?.pinned) throw new Error(`${key} is pinned startup-required context and cannot be unloaded individually.`);
     activeContext.delete(key);
     return { content: [{ type: "text", text: `[HIVE CONTEXT UPDATE] ${key} is unloaded and must no longer be treated as active Hive context.` }], structuredContent: contextStructured() };
   });
