@@ -1865,27 +1865,6 @@ function buildServer(authContext = {}) {
   );
 
   server.tool(
-    "save_journal_entry",
-    "Save a normal journal entry as Markdown into the _sorter inbox. The caller must provide the final title and text. Nothing is saved until this tool is called.",
-    {
-      text: z.string().min(1).describe("Final journal entry text"),
-      title: z.string().min(1).describe("Journal entry title"),
-      entry_date: z.string().optional().describe("Entry date as DD-MM-YYYY; defaults to today in Sydney time"),
-    },
-    async ({ text, title, entry_date }) => {
-      const cleanTitle = sanitizeVentTitle(title);
-      const entryDate = entry_date || sydneyDateDDMMYYYY();
-      monthYearFromEntryDate(entryDate);
-      const filename = `${entryDate} - ${cleanTitle}.md`;
-      const filepath = `${SORT_FOLDER}/${filename}`;
-      const fileContent = `# ${cleanTitle}\n\n${entryDate}\n\n${text}\n`;
-      await ops.writeFile(filepath, fileContent);
-      logEvent("file.change.write", { ...authContext, source: "journal_mode", filepath, chars: text.length });
-      return { content: [{ type: "text", text: `Saved journal entry to \`${filepath}\`` }] };
-    }
-  );
-
-  server.tool(
     "search_files",
     "Search file contents for a substring within the Master Hive store",
     {
