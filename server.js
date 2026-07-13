@@ -246,23 +246,6 @@ async function resolveStartupPath(filepath) {
   return normalize(path.posix.join(folder, match.name));
 }
 
-async function resolveStartupPath(filepath) {
-  const rel = normalize(filepath);
-  const absolute = path.join(ROOT, ...rel.split("/"));
-  try {
-    const stat = await fs.stat(absolute);
-    if (stat.isFile()) return rel;
-  } catch {}
-
-  const folder = path.posix.dirname(rel);
-  const wanted = path.posix.basename(rel).replace(/\.[^.]+$/, "").toLowerCase();
-  const folderAbsolute = path.join(ROOT, ...folder.split("/"));
-  const entries = await fs.readdir(folderAbsolute, { withFileTypes: true });
-  const match = entries.find((entry) => entry.isFile() && entry.name.replace(/\.[^.]+$/, "").toLowerCase() === wanted);
-  if (!match) throw new Error(`Required startup file not found: ${rel}`);
-  return normalize(path.posix.join(folder, match.name));
-}
-
 async function readableStartupText(filepath) {
   const rel = normalize(filepath);
   if (!rel || rel.includes("..") || /^[a-z]:/i.test(rel)) throw new Error(`Invalid Hive-relative path: ${filepath}`);
