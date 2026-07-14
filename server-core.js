@@ -11,7 +11,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { jwtVerify, SignJWT } from "jose";
-import { mountOAuth, getOAuthState } from "./oauth.js";
+import { mountOAuth, getOAuthState, revokeOAuthAccess } from "./oauth.js";
 import { makeOps } from "./hive-ops.js";
 import archiver from "archiver";
 import mammoth from "mammoth";
@@ -2578,6 +2578,16 @@ app.get("/api/server-status", async (req, res) => {
 app.get("/api/oauth-state", (req, res) => {
   logEvent("api.oauth_state.ok", requestContext(req));
   res.json(getOAuthState());
+});
+
+app.post("/api/oauth-disconnect", express.json(), (req, res) => {
+  try {
+    const result = revokeOAuthAccess(req.body?.email, req.body?.flow || null);
+    logEvent("api.oauth_disconnect.ok", { ...requestContext(req), ...result });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.post("/api/sort/preview", async (req, res) => {

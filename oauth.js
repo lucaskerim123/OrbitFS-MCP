@@ -95,6 +95,21 @@ export function getOAuthState() {
   };
 }
 
+export function revokeOAuthAccess(email, flow = null) {
+  const targetEmail = String(email || "").trim().toLowerCase();
+  if (!targetEmail) throw new Error("email is required");
+  let revoked = 0;
+  for (const [token, entry] of refreshTokens.entries()) {
+    if (String(entry.email || "").toLowerCase() === targetEmail && (!flow || entry.flow === flow)) {
+      refreshTokens.delete(token);
+      revoked++;
+    }
+  }
+  if (revoked) saveState();
+  logEvent("oauth.admin.revoke", { email: targetEmail, flow: flow || "all", revoked });
+  return { email: targetEmail, flow: flow || "all", revoked };
+}
+
 export function mountOAuth(app, cfg) {
   const { publicBaseUrl, cfAuthEndpoint, cfTokenEndpoint, cfClientId, cfClientSecret, secretKey } = cfg;
 
