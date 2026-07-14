@@ -10,7 +10,7 @@ ChatGPT should map these messages onto Actions:
 | `/server-status` | none | `getServerStatus` | Exact hard trigger. Return `text` exactly. |
 | `server status` | none | `getServerStatus` | Plain-English hard trigger. |
 | `show server status` | none | `getServerStatus` | Plain-English hard trigger. |
-| `show hive status` | none | `getServerStatus` | Plain-English hard trigger. |
+| `show orbitfs status` | none | `getServerStatus` | Plain-English hard trigger. |
 | `/openfileweb` | `filepath` | `getFileWebLink` | Returns a browser link for one file. |
 | `/startup` | `project`, `load_level` | `startupFirestorm` | Defaults load to `med`. Accepts `light/normal/full`. |
 | `/list` | `subpath` | `listFolder` | Omit `subpath` for root. |

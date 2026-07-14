@@ -1,10 +1,10 @@
-# Master Hive MCP Live Server Structure
+# OrbitFS MCP Live Server Structure
 
 This folder is the live MCP server for both ChatGPT and Claude.
 
 ## Live Server
 
-- Path: `C:\mcp-hive-server`
+- Path: `F:\OrbitFS Project\orbitfs-mcp`
 - Process entrypoint: `server.js`
 - Environment file: `.env`
 - OAuth state file: `oauth_state.json`
@@ -18,16 +18,16 @@ This folder is the live MCP server for both ChatGPT and Claude.
 Use one server and separate OAuth client registrations:
 
 - ChatGPT client:
-  - Local lane folder: `C:\mcp-hive-server\Codex`
+  - Local lane folder: `F:\OrbitFS Project\orbitfs-mcp\Codex`
   - Redirect URI starts with `https://chatgpt.com/connector/oauth/`
   - Uses the shared MCP endpoint: `${PUBLIC_BASE_URL}/mcp`
 
 - Claude client:
-  - Local lane folder: `C:\mcp-hive-server\claude`
+  - Local lane folder: `F:\OrbitFS Project\orbitfs-mcp\claude`
   - Redirect URI is `https://claude.ai/api/mcp/auth_callback`
   - Uses the shared MCP endpoint: `${PUBLIC_BASE_URL}/mcp`
 
-Both clients use the same tool schema and the same Master Hive root. Client-specific behavior should live in the client prompt/configuration, not in duplicated MCP servers.
+Both clients use the same tool schema and the same OrbitFS root. Client-specific behavior should live in the client prompt/configuration, not in duplicated MCP servers.
 
 ## What Belongs Where
 
@@ -42,8 +42,8 @@ Both clients use the same tool schema and the same Master Hive root. Client-spec
 
 ## Safety Rules
 
-- Do not run two production servers against the same Hive root.
-- Do not edit Hive content files from this repo.
+- Do not run two production servers against the same OrbitFS root.
+- Do not edit OrbitFS content files from this repo.
 - Do not put ChatGPT or Claude instruction text in this repo.
 - Do not commit `.env`, OAuth tokens, or logs.
 - Test risky changes in a separate copy, then merge only the reviewed diff into this live folder.

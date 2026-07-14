@@ -129,7 +129,7 @@ export function mountOAuth(app, cfg) {
   });
 
   app.post("/oauth/register", express.json(), (req, res) => {
-    const clientId = "hive-" + crypto.randomBytes(12).toString("hex");
+    const clientId = "orbitfs-" + crypto.randomBytes(12).toString("hex");
     const redirectUris = req.body.redirect_uris || [];
     clients.set(clientId, { redirectUris });
     saveState();

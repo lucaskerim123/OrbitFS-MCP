@@ -4,13 +4,13 @@
 
 Give ChatGPT a clear Actions lane without changing the shared MCP tools used by Claude.
 
-ChatGPT Actions should call the existing REST API exposed by the live server. Claude should continue using MCP tools. Both lanes still point at the same Master Hive root.
+ChatGPT Actions should call the existing REST API exposed by the live server. Claude should continue using MCP tools. Both lanes still point at the same OrbitFS root.
 
 ## Recommended Rollout
 
 Start with read-only Actions only:
 
-- `pingHive` - health check.
+- `pingOrbitFS` - health check.
 - `listFolder` - list one folder.
 - `readFile` - read one text file.
 - `getManifest` - get the file manifest for sync/audit context.
@@ -19,7 +19,7 @@ Do not enable write, delete, move, mkdir, upload, or download Actions in the fir
 
 ## Why Read-Only First
 
-Read-only Actions let ChatGPT inspect the Hive without risking accidental edits. Any destructive or mutating workflow can stay in MCP/server code until it has explicit guardrails.
+Read-only Actions let ChatGPT inspect OrbitFS without risking accidental edits. Any destructive or mutating workflow can stay in MCP/server code until it has explicit guardrails.
 
 ## Authentication
 
@@ -36,20 +36,20 @@ Do not put the API key in any repo file.
 
 ChatGPT Actions lane:
 
-- OpenAPI schemas live here in `C:\mcp-hive-server\Codex`.
+- OpenAPI schemas live here in `F:\OrbitFS Project\orbitfs-mcp\Codex`.
 - Actions call REST endpoints under `/api`.
 - Actions should be small, obvious, and low-risk.
 
 Shared server lane:
 
-- Real server code stays in `C:\mcp-hive-server\server.js`.
-- OAuth stays in `C:\mcp-hive-server\oauth.js`.
-- Hive content stays outside this repo.
+- Real server code stays in `F:\OrbitFS Project\orbitfs-mcp\server.js`.
+- OAuth stays in `F:\OrbitFS Project\orbitfs-mcp\oauth.js`.
+- OrbitFS content stays outside this repo.
 
 Claude lane:
 
 - Claude continues to use MCP tools through `/mcp`.
-- Claude-specific notes live in `C:\mcp-hive-server\claude`.
+- Claude-specific notes live in `F:\OrbitFS Project\orbitfs-mcp\claude`.
 
 ## Later Admin Actions
 
@@ -69,11 +69,11 @@ These actions already exist in `master-hive-full.openapi.yaml` because the live 
 
 Read-only:
 
-- `pingHive` - check whether the Hive server is reachable.
+- `pingOrbitFS` - check whether the OrbitFS server is reachable.
 - `listFolder` - list one folder.
 - `readFile` - read one text file.
 - `getManifest` - get the full file manifest.
-- `downloadFile` - download a file through the Hive server.
+- `downloadFile` - download a file through the OrbitFS server.
 - `getFileWebLink` - get a link that opens a file directly in a browser tab (`/openfileweb <file>`).
 - `getOAuthState` - inspect registered OAuth clients and refresh-token accounts.
 
@@ -93,7 +93,7 @@ Recommended ChatGPT policy:
 - Prefer `moveToTrash` over `deleteFile` for normal user-facing deletes.
 - Treat `emptyTrash` as a high-risk admin action requiring explicit confirmation.
 - Ask the user for explicit confirmation before any admin action.
-- Never perform admin actions against instruction files or Hive content unless the user names the exact target path.
+- Never perform admin actions against instruction files or OrbitFS content unless the user names the exact target path.
 
 ## Needed Future Actions
 
@@ -120,7 +120,7 @@ Versioning/recovery:
 - `createBackup` - copy a target file/folder into a backup location.
 - `listBackups` - list backups for a path.
 - `restoreBackup` - restore a specific backup.
-- `snapshotHive` - create a full lightweight manifest snapshot.
+- `snapshotOrbitFS` - create a full lightweight manifest snapshot.
 - `compareSnapshots` - show added/changed/deleted paths between snapshots.
 
 Organization:
@@ -141,10 +141,10 @@ Client-flow/admin:
 
 Operational:
 
-- `getServerStatus` - return Hive server/tunnel/panel status from the web panel or a shared monitor endpoint.
+- `getServerStatus` - return OrbitFS server/tunnel/panel status from the web panel or a shared monitor endpoint.
 - `getDiskStatus` - return disk totals/free space.
 - `getQueueStatus` - future place for long-running upload/sync jobs.
-- `restartHiveServer` - admin-only, probably better kept in the web panel rather than ChatGPT Actions.
+- `restartOrbitFSServer` - admin-only, probably better kept in the web panel rather than ChatGPT Actions.
 
 Implementation priority:
 
@@ -164,7 +164,7 @@ They map user commands such as:
 - `/startup Mental full`
 - `/startup Court:Mental normal`
 
-to read-only Action calls that load the real Hive startup files from `_system/Startup`.
+to read-only Action calls that load the real OrbitFS startup files from `_system/Startup`.
 
 Trash/deletion commands are separate:
 

@@ -1,20 +1,20 @@
 ﻿# Claude Client Lane
 
-This folder contains Claude-specific notes for the shared Hive connection.
+This folder contains Claude-specific notes for the shared OrbitFS connection.
 
 The MCP server is still shared:
 
-- Live server folder: `C:\mcp-hive-server`
+- Live server folder: `F:\OrbitFS Project\orbitfs-mcp`
 - MCP endpoint: `${PUBLIC_BASE_URL}/mcp`
 - Tool implementation: `..\server.js`
 - OAuth implementation: `..\oauth.js`
 
-Keep only Claude client notes here. Do not put Hive content files or Claude instruction files in this folder.
+Keep only Claude client notes here. Do not put OrbitFS content files or Claude instruction files in this folder.
 
 ## Scope
 
-- Claude and ChatGPT both use the same Hive server
-- File content lives in `C:\Project FireStorm\The Master Hive`
+- Claude and ChatGPT both use the same OrbitFS server
+- File content lives in `F:\OrbitFS Project\The Orbit FS`
 - Protected roots and trash behavior are enforced by the server, not by the client
 
 ## Slash commands

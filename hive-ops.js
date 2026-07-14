@@ -23,7 +23,7 @@ export function makeOps(root) {
   function safeResolve(rel) {
     const full = path.resolve(ROOT, rel || ".");
     if (full !== ROOT && !full.startsWith(ROOT + path.sep)) {
-      throw new Error("Path escapes the Master Hive root");
+      throw new Error("Path escapes the OrbitFS root");
     }
     return full;
   }

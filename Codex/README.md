@@ -1,10 +1,10 @@
 # Codex / ChatGPT Client Lane
 
-This folder contains the ChatGPT/Codex client-side docs for the Hive integration.
+This folder contains the ChatGPT/Codex client-side docs for the OrbitFS integration.
 
 The MCP server is still shared:
 
-- Live server folder: `C:\mcp-hive-server`
+- Live server folder: `F:\OrbitFS Project\orbitfs-mcp`
 - MCP endpoint: `${PUBLIC_BASE_URL}/mcp`
 - Tool implementation: `..\server.js`
 - OAuth implementation: `..\oauth.js`
@@ -21,7 +21,7 @@ The MCP server is still shared:
 ## What this lane does
 
 - Loads FireStorm startup files for Master, Court, Mental, and Media
-- Uses the shared Hive REST/MCP server, not a separate data store
+- Uses the shared OrbitFS REST/MCP server, not a separate data store
 - Keeps ChatGPT Actions read-only by default until an admin action is explicitly needed
 
 ## Quick setup

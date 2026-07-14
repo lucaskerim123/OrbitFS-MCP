@@ -1,6 +1,6 @@
 ﻿# orbitfs-mcp-server
 
-MCP and REST server for the Master Hive file store.
+MCP and REST server for the OrbitFS file store.
 
 It exposes the FireStorm root at `HIVE_ROOT` over:
 
@@ -12,7 +12,7 @@ plugin; use `orbitfs-panel/plugins/OrbitFS Sorter`.
 
 ## What it serves
 
-- Shared FireStorm content at `C:\Project FireStorm\The Master Hive`
+- Shared FireStorm content at `F:\OrbitFS Project\The Orbit FS`
 - Protected system roots like `_system`, `0. Core Folder`, `_media`, and the other project roots
 - `_trash` as the soft-delete bin
 - `/emptybin`-style permanent deletion for trash contents

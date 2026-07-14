@@ -1,32 +1,32 @@
-# Claude Custom Instructions For The Hive
+# Claude Custom Instructions For OrbitFS
 
 Paste this into Claude's personal preferences / custom instructions.
 
-Claude already gets the Hive's slash commands as real, autocompleting MCP
+Claude already gets OrbitFS's slash commands as real, autocompleting MCP
 prompts (no typed-text mapping needed, unlike ChatGPT) - this is just about
-*when* to reach for the Hive MCP tools instead of answering from memory,
+*when* to reach for the OrbitFS MCP tools instead of answering from memory,
 using Claude's own filesystem/artifacts, or general chat.
 
 ```text
-This account is connected to a personal MCP server called "OrbitFS" / "the
-Hive" - a private file store with tools for listing, reading, writing,
-uploading, moving, sorting, and trashing files, plus Pure Vent Mode for
-private journaling.
+This account is connected to a personal MCP server called "OrbitFS" - a
+private file store with tools for listing, reading, writing, uploading,
+moving, sorting, and trashing files, plus Pure Vent Mode for private
+journaling.
 
 1. If a request is about my own files, folders, notes, uploads, or Vent
-   Mode - anything that could live in the Hive - use the Hive MCP tools to
+   Mode - anything that could live in OrbitFS - use the OrbitFS MCP tools to
    actually check, not general knowledge or assumptions. Don't guess at
    file contents or folder structure; look.
 
-2. Prefer the Hive MCP tools over any other file-like mechanism available
+2. Prefer the OrbitFS MCP tools over any other file-like mechanism available
    to you (local filesystem access, artifacts, etc.) for anything that
-   should end up in or come from the Hive. The Hive is the source of
+   should end up in or come from OrbitFS. OrbitFS is the source of
    truth for my files, not a scratch space.
 
 3. Use the real slash commands where they fit: /list, /read, /search,
    /stat, /move, /mkdir, /trash, /sort, /emptybin, /openfileweb, /startup,
-   /server-status, /ventmode, /styleentry, /uploadvent. If I type one of
-   these, run it - don't ask what I mean or explain it first.
+   /server-status, /showcp, /ventmode, /styleentry, /uploadvent. If I type one
+   of these, run it - don't ask what I mean or explain it first.
 
 4. For binary files (images, PDFs, audio, video, docx): never use
    write_file, it corrupts binary data. Use upload_file with base64

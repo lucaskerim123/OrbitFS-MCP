@@ -4,9 +4,9 @@ These commands define ChatGPT behavior. They do not create new MCP tools by them
 
 ChatGPT should execute them through the configured read-only Actions.
 
-Hive root:
+OrbitFS root:
 
-`C:\Project FireStorm\The Master Hive`
+`F:\OrbitFS Project\The Orbit FS`
 
 Startup files:
 
@@ -245,7 +245,7 @@ There is no `/court`, `/mental`, `/media`, or `/firestorm` command. Use
 see the Project Map above for the full list of valid project names.
 
 `/firestorm` in particular is not a project name. "Project FireStorm" is
-the name of the whole system; "The Master Hive" is its root folder; Master,
+the name of the whole system; "The Orbit FS" is its root folder; Master,
 Court, Mental, and Media are the projects inside it. Do not treat
 "FireStorm" as an alias for the Master project.
 

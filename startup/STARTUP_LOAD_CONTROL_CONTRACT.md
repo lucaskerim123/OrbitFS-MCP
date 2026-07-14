@@ -35,7 +35,7 @@ MEGA is separate from load strength. It loads the selected project `STARTUP.md`,
 
 ## Required enforcement
 
-- Hive-relative paths only.
+- OrbitFS-relative paths only.
 - Reject traversal and local filesystem paths.
 - Archive excluded by default at search and read level.
 - Resolve and read the live project `STARTUP.md` before other selected context.

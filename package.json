@@ -1,7 +1,7 @@
 {
   "name": "orbitfs-mcp-server",
   "version": "1.0.0",
-  "description": "The Hive ChatGPT app and OrbitFS MCP server",
+  "description": "The OrbitFS ChatGPT app and OrbitFS MCP server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,8 +10,7 @@
   "keywords": [
     "chatgpt-app",
     "mcp",
-    "orbitfs",
-    "the-hive"
+    "orbitfs"
   ],
   "author": "IncendiaryNetwork",
   "license": "ISC",

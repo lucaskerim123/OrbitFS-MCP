@@ -215,13 +215,13 @@ function registerWidget(server) {
       prefersBorder: true,
       csp: { connectDomains: [widgetDomain], resourceDomains: [widgetDomain] },
     },
-    "openai/widgetDescription": "The Hive startup chooser, active context manager, file browser and upload controls.",
+    "openai/widgetDescription": "The OrbitFS startup chooser, active context manager, file browser and upload controls.",
     "openai/widgetPrefersBorder": true,
   };
   server.registerResource(
-    "orbitfs-hive-ui",
+    "orbitfs-ui",
     WIDGET_URI,
-    { title: "The Hive", description: "OrbitFS controls inside ChatGPT", mimeType: "text/html;profile=mcp-app", _meta: widgetMeta },
+    { title: "OrbitFS UI", description: "OrbitFS controls inside ChatGPT", mimeType: "text/html;profile=mcp-app", _meta: widgetMeta },
     async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: WIDGET_HTML, _meta: widgetMeta }] })
   );
 }
@@ -301,7 +301,7 @@ async function resolveStartupPath(filepath) {
 
 async function readableStartupText(filepath) {
   const rel = normalize(filepath);
-  if (!rel || rel.includes("..") || /^[a-z]:/i.test(rel)) throw new Error(`Invalid Hive-relative path: ${filepath}`);
+  if (!rel || rel.includes("..") || /^[a-z]:/i.test(rel)) throw new Error(`Invalid OrbitFS-relative path: ${filepath}`);
   if (archivePath(rel)) throw new Error(`Archive is excluded: ${rel}`);
   const absolute = path.join(ROOT, ...rel.split("/"));
   if (/\.docx$/i.test(rel)) return (await mammoth.extractRawText({ path: absolute })).value;
@@ -451,10 +451,10 @@ ${content}`);
   }
   return {
     content: [{ type: "text", text: blocks.length
-      ? `[INTERNAL HIVE ACTIVE CONTEXT - read every file below and continue treating it as active.]
+      ? `[INTERNAL ORBITFS ACTIVE CONTEXT - read every file below and continue treating it as active.]
 
 ${blocks.join("\n\n")}`
-      : "No active Hive files." }],
+      : "No active OrbitFS files." }],
     structuredContent: contextStructured(authContext, { replayed: blocks.length, failedFiles: failed }),
   };
 }
@@ -464,9 +464,9 @@ function registerExtraTools(server, authContext) {
   extraToolsRegistered.add(server);
   const uiMeta = { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI };
 
-  server.registerTool("hive_ui", {
-    title: "The Hive UI controller",
-    description: "Central controller for The Hive in ChatGPT or Claude. Use for commands like '@The hive open startup', '@The hive open browser', '@The hive open viewer <file>', '@The hive close', '@The hive back', '@The hive refresh', '@The hive focus', '@The hive status', and '@The hive modal <permissions|move|info|upload|delete|close>'.",
+  server.registerTool("orbitfs_ui", {
+    title: "The OrbitFS UI controller",
+    description: "Central controller for the OrbitFS UI in ChatGPT or Claude. Use for commands like '@OrbitFS open startup', '@OrbitFS open browser', '@OrbitFS open viewer <file>', '@OrbitFS close', '@OrbitFS back', '@OrbitFS refresh', '@OrbitFS focus', '@OrbitFS status', and '@OrbitFS modal <permissions|move|info|upload|delete|close>'.",
     inputSchema: {
       action: z.enum(["open", "close", "back", "refresh", "focus", "status", "modal"]),
       screen: z.enum(HIVE_SCREENS).optional(),
@@ -505,32 +505,32 @@ function registerExtraTools(server, authContext) {
     }
     if (target) hiveUiState.selectedFiles = [target];
     if (options) hiveUiState.filters = { ...hiveUiState.filters, ...options };
-    const text = action === "status" ? `Hive UI: ${hiveUiState.open ? "open" : "closed"}; screen=${hiveUiState.currentScreen}; modal=${hiveUiState.modal || "none"}; history=${hiveUiState.history.length}` : `Hive UI ${action}: ${screen || modal || hiveUiState.currentScreen}`;
+    const text = action === "status" ? `OrbitFS UI: ${hiveUiState.open ? "open" : "closed"}; screen=${hiveUiState.currentScreen}; modal=${hiveUiState.modal || "none"}; history=${hiveUiState.history.length}` : `OrbitFS UI ${action}: ${screen || modal || hiveUiState.currentScreen}`;
     return { content: [{ type: "text", text }], structuredContent: hiveUiSnapshot(authContext, { action, target: target || null }) };
   });
 
-  server.registerTool("show_hive", {
-    title: "Open The Hive",
-    description: "Open the Hive interface in ChatGPT. Use for /hive, /files, /context, /profiles, /upload, or natural-language requests to open or manage Hive.",
+  server.registerTool("show_orbitfs_ui", {
+    title: "Open the OrbitFS UI",
+    description: "Open the OrbitFS UI in ChatGPT. Use for /orbitfs, /files, /context, /profiles, /upload, or natural-language requests to open or manage OrbitFS.",
     inputSchema: { view: z.enum(["startup", "context", "files", "upload"]).optional() },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: uiMeta,
   }, async ({ view }) => {
     const config = await readConfig();
-    return { content: [{ type: "text", text: "The Hive interface is open." }], structuredContent: contextStructured(authContext, { mode: "chooser", view: view || "startup", config }) };
+    return { content: [{ type: "text", text: "The OrbitFS UI is open." }], structuredContent: contextStructured(authContext, { mode: "chooser", view: view || "startup", config }) };
   });
 
   server.registerTool("list_active_context", {
-    title: "List active Hive context",
-    description: "List files currently marked active for this Hive ChatGPT session.",
+    title: "List active OrbitFS context",
+    description: "List files currently marked active for this OrbitFS ChatGPT session.",
     inputSchema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: uiMeta,
   }, async () => replayActiveContext(authContext));
 
   server.registerTool("unload_context_file", {
-    title: "Unload Hive context file",
-    description: "Remove a file from the authoritative active Hive context set. This cannot erase text already present earlier in the chat, but ChatGPT must stop treating it as active Hive context.",
+    title: "Unload OrbitFS context file",
+    description: "Remove a file from the authoritative active OrbitFS context set. This cannot erase text already present earlier in the chat, but ChatGPT must stop treating it as active OrbitFS context.",
     inputSchema: { filepath: z.string() },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: uiMeta,
@@ -540,19 +540,43 @@ function registerExtraTools(server, authContext) {
     const current = activeContext.get(key);
     if (current?.pinned) throw new Error(`${key} is pinned startup-required context and cannot be unloaded individually.`);
     activeContext.delete(key);
-    return { content: [{ type: "text", text: `[HIVE CONTEXT UPDATE] ${key} is unloaded and must no longer be treated as active Hive context.` }], structuredContent: contextStructured(authContext) };
+    return { content: [{ type: "text", text: `[ORBITFS CONTEXT UPDATE] ${key} is unloaded and must no longer be treated as active OrbitFS context.` }], structuredContent: contextStructured(authContext) };
+  });
+
+  server.registerTool("unload_context_files", {
+    title: "Unload multiple OrbitFS context files",
+    description: "Remove several files from the authoritative active OrbitFS context set in one call. Pinned startup-required files are skipped, not errored.",
+    inputSchema: { filepaths: z.array(z.string()).min(1) },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    _meta: uiMeta,
+  }, async ({ filepaths }) => {
+    const activeContext = getActiveContext(authContext);
+    const unloaded = [];
+    const skipped = [];
+    for (const filepath of filepaths) {
+      const key = normalize(filepath);
+      const current = activeContext.get(key);
+      if (current?.pinned) { skipped.push(key); continue; }
+      activeContext.delete(key);
+      unloaded.push(key);
+    }
+    const lines = [];
+    if (unloaded.length) lines.push(`[ORBITFS CONTEXT UPDATE] ${unloaded.join(", ")} unloaded and must no longer be treated as active OrbitFS context.`);
+    if (skipped.length) lines.push(`Skipped (pinned startup-required, cannot unload individually): ${skipped.join(", ")}`);
+    if (!lines.length) lines.push("No files were unloaded.");
+    return { content: [{ type: "text", text: lines.join("\n") }], structuredContent: contextStructured(authContext, { unloaded, skipped }) };
   });
 
   server.registerTool("clear_active_context", {
-    title: "Clear active Hive context",
-    description: "Unload every unpinned file from the authoritative active Hive context set.",
+    title: "Clear active OrbitFS context",
+    description: "Unload every unpinned file from the authoritative active OrbitFS context set.",
     inputSchema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: uiMeta,
   }, async () => {
     const activeContext = getActiveContext(authContext);
     for (const [key, file] of activeContext) if (!file.pinned) activeContext.delete(key);
-    return { content: [{ type: "text", text: "[HIVE CONTEXT UPDATE] Unpinned Hive files are no longer active." }], structuredContent: contextStructured(authContext) };
+    return { content: [{ type: "text", text: "[ORBITFS CONTEXT UPDATE] Unpinned OrbitFS files are no longer active." }], structuredContent: contextStructured(authContext) };
   });
 
   server.registerTool("load_all_profiles", {
@@ -574,7 +598,7 @@ function registerExtraTools(server, authContext) {
       }
     }
     return {
-      content: [{ type: "text", text: `[INTERNAL HIVE PROFILE CONTEXT - Read every profile below and treat each as active context. Do not summarize unless asked.]\n\n${blocks.join("\n\n")}` }],
+      content: [{ type: "text", text: `[INTERNAL ORBITFS PROFILE CONTEXT - Read every profile below and treat each as active context. Do not summarize unless asked.]\n\n${blocks.join("\n\n")}` }],
       structuredContent: contextStructured(authContext, { mode: "loaded", profileCount: paths.length }),
     };
   });
@@ -597,8 +621,8 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
 
   registerExtraTools(this, this.authContext);
   return this.registerTool("startup", {
-    title: "Start The Hive project",
-    description: "Use for /startup. With no arguments, show the project and load-strength chooser. With project and strength, load real Hive startup context and show what became active.",
+    title: "Start The OrbitFS project",
+    description: "Use for /startup. With no arguments, show the project and load-strength chooser. With project and strength, load real OrbitFS startup context and show what became active.",
     inputSchema: {
       project: z.string().optional().describe("1. Legal or 2. Wellbeing"),
       loadstrength: z.enum(["low", "medium", "high", "custom1", "custom2", "custom"]).optional(),
@@ -618,8 +642,8 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     _meta: {
       ui: { resourceUri: WIDGET_URI },
       "openai/outputTemplate": WIDGET_URI,
-      "openai/toolInvocation/invoking": "Loading The Hive project...",
-      "openai/toolInvocation/invoked": "The Hive project loaded",
+      "openai/toolInvocation/invoking": "Loading The OrbitFS project...",
+      "openai/toolInvocation/invoked": "The OrbitFS project loaded",
     },
   }, async ({ project, loadstrength, mega, selectedFiles, taskFiles }) => {
     const config = await readConfig();

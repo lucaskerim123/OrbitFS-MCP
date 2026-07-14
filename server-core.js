@@ -28,12 +28,12 @@ const GHOST_TRASH_ROOT = process.env.GHOST_TRASH_ROOT || "B:\\OrbitFS Recovery\\
 const VENT_FOLDER = "2. Wellbeing/Pure Vent Mode";
 const JOURNAL_FOLDER = "2. Wellbeing/Letters Documents/Journal Entries";
 const JOURNAL_MODE_RULES = `[JOURNAL MODE - ACTIVE CHAT RULES]
-Journal Mode overlays the current chat and preserves all active Hive context. It is for ordinary thoughts, reflections, events, ideas, memories, plans, and day-to-day life.
+Journal Mode overlays the current chat and preserves all active OrbitFS context. It is for ordinary thoughts, reflections, events, ideas, memories, plans, and day-to-day life.
 While active: respond normally and conversationally. Do not dramatise, clinically reinterpret, or turn every message into advice. Do not save anything automatically.
 When asked to style the journal entry, preserve Luke's wording, meaning, tone, and sequence. Lightly correct obvious transcription errors, add paragraphs, title, and date, and remove only accidental repetition. Do not soften strong wording or add interpretations.
 Saving requires separate explicit approval and must upload the exact locked draft.`;
 const VENT_MODE_RULES = `[PURE VENT MODE - ACTIVE CHAT RULES]
-Vent Mode overlays the current chat and all currently active Hive context. Never clear, replace, unload, or block existing context. More context may be loaded while Vent Mode is active.
+Vent Mode overlays the current chat and all currently active OrbitFS context. Never clear, replace, unload, or block existing context. More context may be loaded while Vent Mode is active.
 This is Luke's protected space to vent worries, stress, anger, grief, paranoia, life events, and unsent thoughts without judgment or unwanted change.
 While active: match Luke's wording, tone, energy, and strong language. Do not soften, polish, clinically reframe, summarise, interpret, explain emotions, automatically analyse, or automatically ask wellbeing questions. Conversation comes first.
 Nothing is recorded, saved, uploaded, or turned into a document automatically.
@@ -97,16 +97,38 @@ const HIVE_SERVICE_NAME = process.env.HIVE_SERVICE_NAME || "OrbitFSMcpServer";
 const TUNNEL_SERVICE_NAME = process.env.TUNNEL_SERVICE_NAME || "OrbitFSTunnel";
 const POWERSHELL_EXE = process.env.POWERSHELL_EXE || "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 
+const LOG_ROTATE_MAX_BYTES = 5 * 1024 * 1024;
+const LOG_ROTATE_MAX_BACKUPS = 3;
+
+async function rotateLogIfNeeded(filepath) {
+  let stat;
+  try { stat = await fs.stat(filepath); } catch { return; }
+  if (stat.size < LOG_ROTATE_MAX_BYTES) return;
+  try {
+    for (let i = LOG_ROTATE_MAX_BACKUPS - 1; i >= 1; i--) {
+      const from = `${filepath}.${i}`;
+      const to = `${filepath}.${i + 1}`;
+      await fs.rm(to, { force: true }).catch(() => {});
+      await fs.rename(from, to).catch(() => {});
+    }
+    await fs.rename(filepath, `${filepath}.1`);
+  } catch {}
+}
+
 function logEvent(event, fields = {}) {
   const line = JSON.stringify({ ts: new Date().toISOString(), event, ...fields });
   console.log(line);
-  fs.appendFile(EVENT_LOG_FILE, `${line}\n`).catch(() => {});
+  rotateLogIfNeeded(EVENT_LOG_FILE).finally(() => {
+    fs.appendFile(EVENT_LOG_FILE, `${line}\n`).catch(() => {});
+  });
 }
 
 function logError(event, err, fields = {}) {
   const line = JSON.stringify({ ts: new Date().toISOString(), event, error: err.message, ...fields });
   console.error(line);
-  fs.appendFile(ERROR_LOG_FILE, `${line}\n`).catch(() => {});
+  rotateLogIfNeeded(ERROR_LOG_FILE).finally(() => {
+    fs.appendFile(ERROR_LOG_FILE, `${line}\n`).catch(() => {});
+  });
 }
 
 async function httpCheck(url) {
@@ -212,22 +234,22 @@ async function buildServerStatusReport() {
   const hiveOnline = hiveLocal.ok && services.tunnel.running ? "Likely yes" : (hiveLocal.ok ? "Local only" : "No");
   const hiveStatus = hiveLocal.ok
     ? (services.tunnel.running ? "Local ping OK; tunnel service running." : "Local ping OK; tunnel service not running.")
-    : (services.hive.running ? `Hive service running, but local ping failed${hiveLocal.error ? `: ${hiveLocal.error}` : "."}` : `Hive service ${services.hive.status}.`);
+    : (services.hive.running ? `OrbitFS service running, but local ping failed${hiveLocal.error ? `: ${hiveLocal.error}` : "."}` : `OrbitFS service ${services.hive.status}.`);
   const hiveErrors = hiveLocal.ok && services.hive.running
     ? "None detected from local checks."
-    : (hiveErrorBrief || [!services.hive.running ? `Hive service ${services.hive.status}` : null, hiveLocal.error].filter(Boolean).join("; ") || "None detected from recent Hive logs.");
+    : (hiveErrorBrief || [!services.hive.running ? `OrbitFS service ${services.hive.status}` : null, hiveLocal.error].filter(Boolean).join("; ") || "None detected from recent OrbitFS logs.");
 
   const chatgptStatus = classifyConnectionStatus(oauthState.clients || [], oauthState.refreshTokens || [], "chatgpt");
   const claudeStatus = classifyConnectionStatus(oauthState.clients || [], oauthState.refreshTokens || [], "claude");
 
   const text = [
-    "The Master Brain",
+    "The OrbitFS Panel",
     `Connected locally: ${masterBrainLocal}`,
     `Connected Online: ${masterBrainOnline}`,
     `Connection status: ${masterBrainStatus}`,
     `Errors (brief): ${masterBrainErrors}`,
     "",
-    "The Hive Server",
+    "The OrbitFS Server",
     `Running: ${hiveRunning}`,
     `Online: ${hiveOnline}`,
     `Status: ${hiveStatus}`,
@@ -563,7 +585,7 @@ async function streamFolderZip(res, relPath) {
   const full = ops.safeResolve(normalized);
   const st = await fs.stat(full);
   if (!st.isDirectory()) throw new Error(`"${normalized}" is not a folder`);
-  const archiveName = `${path.basename(full) || "Master-Hive"}.zip`;
+  const archiveName = `${path.basename(full) || "OrbitFS"}.zip`;
   res.attachment(archiveName);
   res.type("application/zip");
   const archive = archiver("zip", { zlib: { level: 9 } });
@@ -809,7 +831,7 @@ function renderUploadPage(uploadUrl) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hive Upload</title>
+  <title>OrbitFS Upload</title>
   <style>
     :root {
       color-scheme: light;
@@ -892,7 +914,7 @@ function renderUploadPage(uploadUrl) {
 </head>
 <body>
   <main class="card">
-    <h1>Upload to Hive</h1>
+    <h1>Upload to OrbitFS</h1>
     <p>Select one file and upload it directly into <code>_sorter</code>. Links expire after 15 minutes and can only be used once.</p>
     <form id="upload-form">
       <label for="file">Choose file</label>
@@ -1446,7 +1468,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "list_files",
-    "List files and folders in the Master Hive store",
+    "List files and folders in the OrbitFS store",
     {
       subpath: z.string().optional().describe("Relative subfolder, default root"),
       recursive: z.boolean().optional().describe("List all nested contents, not just top level"),
@@ -1466,7 +1488,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "read_file",
-    "Read a file's contents from the Master Hive store",
+    "Read a file's contents from the OrbitFS store",
     { filepath: z.string().describe("Relative path to the file") },
     async ({ filepath }) => {
       logEvent("tool.read_file.start", { ...authContext, filepath });
@@ -1478,7 +1500,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "load_file",
-    "Fully load and understand one Master Hive text or DOCX file. Triggered by `/loadfile <filepath>`. Returns the complete extracted content without startup truncation. Read the entire returned file as active context; do not merely list or preview it, and do not summarize it unless the user asks.",
+    "Fully load and understand one OrbitFS text or DOCX file. Triggered by `/loadfile <filepath>`. Returns the complete extracted content without startup truncation. Read the entire returned file as active context; do not merely list or preview it, and do not summarize it unless the user asks.",
     { filepath: z.string().describe("Relative path to the file that must be fully loaded") },
     async ({ filepath }) => {
       const requested = normalizeRelativePath(filepath);
@@ -1502,7 +1524,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "view_file",
-    "Open a PDF, DOCX, or readable text file in the expandable Hive document viewer UI.",
+    "Open a PDF, DOCX, or readable text file in the expandable OrbitFS document viewer UI.",
     { filepath: z.string().describe("File path or filename") },
     async ({ filepath }) => {
       const resolved = await resolveHiveReference(filepath, "file");
@@ -1510,7 +1532,7 @@ function buildServer(authContext = {}) {
       const structuredContent = buildDocumentView(resolved.path, extracted, false);
       logEvent("tool.view_file.ok", { ...authContext, filepath: resolved.path, format: extracted.format });
       return {
-        content: [{ type: "text", text: `Opened ${resolved.path} in the Hive document viewer.` }],
+        content: [{ type: "text", text: `Opened ${resolved.path} in the OrbitFS document viewer.` }],
         structuredContent,
       };
     }
@@ -1518,7 +1540,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "preview_file",
-    "Preview the first section of a PDF, DOCX, or readable text file in the compact Hive document viewer UI.",
+    "Preview the first section of a PDF, DOCX, or readable text file in the compact OrbitFS document viewer UI.",
     { filepath: z.string().describe("File path or filename") },
     async ({ filepath }) => {
       const resolved = await resolveHiveReference(filepath, "file");
@@ -1526,7 +1548,7 @@ function buildServer(authContext = {}) {
       const structuredContent = buildDocumentView(resolved.path, extracted, true);
       logEvent("tool.preview_file.ok", { ...authContext, filepath: resolved.path, format: extracted.format });
       return {
-        content: [{ type: "text", text: `Previewed ${resolved.path} in the Hive document viewer.` }],
+        content: [{ type: "text", text: `Previewed ${resolved.path} in the OrbitFS document viewer.` }],
         structuredContent,
       };
     }
@@ -1534,9 +1556,9 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "read_folder_recursive",
-    "Recursively list every file and subfolder beneath a Master Hive folder. Use this when the full folder tree is needed, including protected project roots such as 0. Core.",
+    "Recursively list every file and subfolder beneath an OrbitFS folder. Use this when the full folder tree is needed, including protected project roots such as 0. Core.",
     {
-      path: z.string().optional().describe("Relative folder path, default Master Hive root"),
+      path: z.string().optional().describe("Relative folder path, default OrbitFS root"),
       max_entries: z.number().int().min(1).max(RECURSIVE_LIST_MAX_ENTRIES).optional().describe("Maximum entries to return, default 10000"),
     },
     async ({ path: folderPath, max_entries }) => {
@@ -1559,7 +1581,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "read_files_batch",
-    "Read multiple individual text files from the Master Hive in one call. Each result includes its path, content, original character count, and whether it was truncated.",
+    "Read multiple individual text files from the OrbitFS in one call. Each result includes its path, content, original character count, and whether it was truncated.",
     {
       filepaths: z.array(z.string()).min(1).max(BATCH_READ_MAX_FILES).describe("Relative paths of the files to read"),
     },
@@ -1573,7 +1595,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "export_folder",
-    "Export a Master Hive folder as a ZIP archive. Returns a temporary browser download link scoped to that folder and expiring after 15 minutes.",
+    "Export an OrbitFS folder as a ZIP archive. Returns a temporary browser download link scoped to that folder and expiring after 15 minutes.",
     { path: z.string().describe("Relative path of the folder to export") },
     async ({ path: folderPath }) => {
       logEvent("tool.export_folder.start", { ...authContext, path: folderPath });
@@ -1585,7 +1607,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "create_temporary_download_link",
-    "Create a temporary browser download link for a Master Hive file or folder. Files download directly; folders download as ZIP archives. The link is path-scoped and expires after 15 minutes.",
+    "Create a temporary browser download link for an OrbitFS file or folder. Files download directly; folders download as ZIP archives. The link is path-scoped and expires after 15 minutes.",
     { path: z.string().describe("Relative path of the file or folder") },
     async ({ path: targetPath }) => {
       logEvent("tool.create_temporary_download_link.start", { ...authContext, path: targetPath });
@@ -1612,7 +1634,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "write_file",
-    "Create or overwrite a plain text file in the Master Hive store. Do NOT use this for images, PDFs, audio, video, or any other binary file - it writes content as UTF-8 text and will corrupt binary data. Use upload_file for anything that isn't plain text. If you give a bare filename with no folder, new files are placed in the _sorter inbox.",
+    "Create or overwrite a plain text file in the OrbitFS store. Do NOT use this for images, PDFs, audio, video, or any other binary file - it writes content as UTF-8 text and will corrupt binary data. Use upload_file for anything that isn't plain text. If you give a bare filename with no folder, new files are placed in the _sorter inbox.",
     {
       filepath: z.string().describe("Relative path to the file (bare filenames go to the _sorter inbox)"),
       content: z.string().describe("Full text content to write"),
@@ -1682,7 +1704,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "delete_file",
-    "Delete a file or folder from the Master Hive store",
+    "Delete a file or folder from the OrbitFS store",
     { filepath: z.string().describe("Relative path to the file") },
     async ({ filepath }) => {
       logEvent("tool.delete_file.start", { ...authContext, filepath });
@@ -1694,7 +1716,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "move_file",
-    "Move or rename a file or folder within the Master Hive store (e.g. to sort something out of _sorter into its real home). Creates destination folders as needed.",
+    "Move or rename a file or folder within the OrbitFS store (e.g. to sort something out of _sorter into its real home). Creates destination folders as needed.",
     {
       from: z.string().describe("Relative source path"),
       to: z.string().describe("Relative destination path"),
@@ -1710,7 +1732,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "find_items",
-    "Find Master Hive files or folders by a short name instead of a full directory. Use this when the user's wording could match more than one item.",
+    "Find OrbitFS files or folders by a short name instead of a full directory. Use this when the user's wording could match more than one item.",
     {
       query: z.string().describe("Short file or folder name, such as Master Log v1 or Court Profiles"),
       type: z.enum(["any", "file", "folder"]).optional().describe("Optional item type filter"),
@@ -1733,7 +1755,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "move_item",
-    "Move a Master Hive file or folder using short names instead of full directory paths. First call with confirmed=false to resolve and preview the exact move. After the user confirms that exact preview, call again with confirmed=true. Never set confirmed=true without explicit user confirmation.",
+    "Move an OrbitFS file or folder using short names instead of full directory paths. First call with confirmed=false to resolve and preview the exact move. After the user confirms that exact preview, call again with confirmed=true. Never set confirmed=true without explicit user confirmation.",
     {
       source: z.string().describe("Short name or full path of the file/folder to move"),
       destination_folder: z.string().describe("Short name or full path of the destination folder"),
@@ -1763,7 +1785,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "mkdir",
-    "Create a folder (and any missing parent folders) in the Master Hive store",
+    "Create a folder (and any missing parent folders) in the OrbitFS store",
     { subpath: z.string().describe("Relative folder path to create") },
     async ({ subpath }) => {
       logEvent("tool.mkdir.start", { ...authContext, subpath });
@@ -1775,7 +1797,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "stat_file",
-    "Get size, modified time, and sha256 hash of a file in the Master Hive store",
+    "Get size, modified time, and sha256 hash of a file in the OrbitFS store",
     { filepath: z.string().describe("Relative path to the file") },
     async ({ filepath }) => {
       logEvent("tool.stat_file.start", { ...authContext, filepath });
@@ -1787,7 +1809,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "server_status",
-    "Get a live status report for Master Brain, Hive, ChatGPT, and Claude. Triggered by the user typing `/server-status`, `server status`, `show server status`, or `show hive status`.",
+    "Get a live status report for the OrbitFS Panel, OrbitFS MCP server, ChatGPT, and Claude. Triggered by the user typing `/server-status`, `server status`, `show server status`, or `show orbitfs status`.",
     {},
     async () => {
       logEvent("tool.server_status.start", authContext);
@@ -1798,7 +1820,7 @@ function buildServer(authContext = {}) {
   );
   server.tool(
     "open_file_web",
-    "Get a link to open a Master Hive file directly in a web browser. Triggered by the user typing `/openfileweb <file>`. Returns a URL that renders the file inline (PDF, image, text, etc.) or lets the browser handle it; the link is single-file-scoped and expires in 15 minutes.",
+    "Get a link to open an OrbitFS file directly in a web browser. Triggered by the user typing `/openfileweb <file>`. Returns a URL that renders the file inline (PDF, image, text, etc.) or lets the browser handle it; the link is single-file-scoped and expires in 15 minutes.",
     { filepath: z.string().describe("Relative path to the file") },
     async ({ filepath }) => {
       logEvent("tool.open_file_web.start", { ...authContext, filepath });
@@ -1814,7 +1836,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "create_upload_link",
-    "Create a short-lived, single-use upload link for browser-based multipart uploads into the Hive. The link expires after 15 minutes and defaults to the _sorter inbox.",
+    "Create a short-lived, single-use upload link for browser-based multipart uploads into OrbitFS. The link expires after 15 minutes and defaults to the _sorter inbox.",
     { destination: z.string().optional().describe("Destination folder; defaults to _sorter") },
     async ({ destination: requestedDestination }) => {
       const targetDestination = normalizeRelativePath(requestedDestination || SORT_FOLDER) || SORT_FOLDER;
@@ -1848,7 +1870,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "search_files",
-    "Search file contents for a substring within the Master Hive store",
+    "Search file contents for a substring within the OrbitFS store",
     {
       query: z.string().describe("Substring to search for"),
       subpath: z.string().optional().describe("Relative subfolder to search, default root"),
@@ -1867,7 +1889,7 @@ function buildServer(authContext = {}) {
 
   server.tool(
     "fetch_url_to_file",
-    "Download a URL and save it into the Hive store, binary-safe (docx, PDF, images, audio all fine). Use this when a real downloadable URL exists that the Hive server itself can access directly. If you only have a ChatGPT or Claude sandbox path like '/mnt/data/file.pdf', the server cannot read that path; use upload_file with base64 content or create_upload_link instead. Bare filenames with no folder go to the _sorter inbox.",
+    "Download a URL and save it into the OrbitFS store, binary-safe (docx, PDF, images, audio all fine). Use this when a real downloadable URL exists that the OrbitFS server itself can access directly. If you only have a ChatGPT or Claude sandbox path like '/mnt/data/file.pdf', the server cannot read that path; use upload_file with base64 content or create_upload_link instead. Bare filenames with no folder go to the _sorter inbox.",
     {
       url: z.string().url().describe("URL to fetch"),
       filepath: z.string().describe("Relative path to save the content to (bare filenames go to the _sorter inbox)"),
@@ -2033,7 +2055,7 @@ function buildServer(authContext = {}) {
 
   toolPrompt(
     "list",
-    "List files and folders in a Master Hive folder",
+    "List files and folders in an OrbitFS folder",
     { subpath: z.string().optional().describe("Relative folder, default root") },
     "list_files"
   );
@@ -2050,18 +2072,18 @@ function buildServer(authContext = {}) {
 
   toolPrompt(
     "viewfile",
-    "Open a document in the expandable Hive viewer",
+    "Open a document in the expandable OrbitFS viewer",
     { filepath: z.string().describe("PDF, DOCX, or text file") },
     "view_file",
-    "Show the returned Hive document viewer UI."
+    "Show the returned OrbitFS document viewer UI."
   );
 
   toolPrompt(
     "previewfile",
-    "Preview a document in the compact Hive viewer",
+    "Preview a document in the compact OrbitFS viewer",
     { filepath: z.string().describe("PDF, DOCX, or text file") },
     "preview_file",
-    "Show the returned Hive document viewer UI."
+    "Show the returned OrbitFS document viewer UI."
   );
 
   toolPrompt(
@@ -2083,10 +2105,18 @@ function buildServer(authContext = {}) {
 
   toolPrompt(
     "server-status",
-    "Get a live status report for Master Brain, Hive, ChatGPT, and Claude",
+    "Get a live status report for the OrbitFS Panel, OrbitFS MCP server, ChatGPT, and Claude",
     {},
     "server_status",
     "Reply with the returned text exactly and do not add any extra commentary."
+  );
+
+  toolPrompt(
+    "showcp",
+    "Open the OrbitFS UI control panel widget",
+    {},
+    "orbitfs_ui",
+    'Call it with action="open" to open the widget on the startup screen.'
   );
   toolPrompt(
     "move",

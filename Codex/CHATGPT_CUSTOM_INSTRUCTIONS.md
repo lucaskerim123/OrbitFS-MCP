@@ -1,6 +1,6 @@
-# ChatGPT Custom Instructions For Hive Commands
+# ChatGPT Custom Instructions For OrbitFS Commands
 
-Paste this into the instruction layer that governs ChatGPT's behavior for the Hive.
+Paste this into the instruction layer that governs ChatGPT's behavior for OrbitFS.
 
 ChatGPT does not support real MCP prompt commands yet, so unlike Claude,
 which already has native slash commands configured, ChatGPT should treat
@@ -19,7 +19,7 @@ Treat these messages as hard command triggers:
 - `/server-status`
 - `server status`
 - `show server status`
-- `show hive status`
+- `show orbitfs status`
 
 For any of those 4 triggers:
 - Call `getServerStatus` immediately.
@@ -64,7 +64,7 @@ Command map:
 - `/list [subpath]`
   - Call `listFolder`.
   - If a path is supplied, pass `subpath=<subpath>`.
-  - If omitted, list the Hive root.
+  - If omitted, list the OrbitFS root.
 
 - `/read <filepath>`
   - Call `readFile` with `path=<filepath>`.
