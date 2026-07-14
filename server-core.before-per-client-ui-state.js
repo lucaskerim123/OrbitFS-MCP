@@ -1442,7 +1442,6 @@ function buildServer(authContext = {}) {
     description: "Shared file store and server control - list, read, write, move, sort, and trash files, plus MCP prompts for startup context and quick actions.",
     icons: [{ src: SERVER_ICON_SVG, mimeType: "image/svg+xml" }],
   });
-  server.authContext = authContext;
 
   server.tool(
     "list_files",

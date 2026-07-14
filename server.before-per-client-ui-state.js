@@ -14,76 +14,29 @@ const originalTool = McpServer.prototype.tool;
 const resourceRegistered = new WeakSet();
 const extraToolsRegistered = new WeakSet();
 const DEFAULT_PUBLIC_ORIGIN = "https://mcp.incendiarynetworks.cc";
+const activeContext = new Map();
 const CONTEXT_TTL_MS = null;
 let capturedLoadFileHandler = null;
 const HIVE_SCREENS = ["startup", "browser", "viewer", "context", "vent", "settings", "permissions", "search", "move", "upload"];
 const HIVE_MODALS = ["permissions", "move", "info", "upload", "delete"];
+const hiveUiState = {
+  currentScreen: "startup",
+  history: [],
+  selectedFiles: [],
+  filters: {},
+  scrollPosition: {},
+  permissions: {},
+  modal: null,
+  open: false,
+  focused: false,
+  revision: 0,
+};
 
-// UI navigation state and loaded-file context are per client (ChatGPT vs Claude vs
-// webpanel), keyed by authContext.flow - see oauth.js classifyRedirect. This keeps
-// two clients connected as the same person from stomping on each other's open
-// screen/modal or active file set.
-const activeContextByFlow = new Map();
-const hiveUiStateByFlow = new Map();
-
-function flowKey(authContext = {}) {
-  return authContext.flow || "shared";
-}
-
-// The /mcp transport is stateless per request (see StreamableHTTPServerTransport
-// with no sessionIdGenerator in server-core.js), and MCP clients sometimes drop
-// and re-initialize their connection mid-call, resending whatever tool call was
-// still in flight. For expensive/visible calls like startup, that produces
-// duplicate "project loaded" confirmations. Dedupe identical (client, tool,
-// args) calls that land within a short window so a retry reuses the original
-// call's result instead of re-running it.
-const DEDUP_WINDOW_MS = 8000;
-const dedupCache = new Map();
-
-function withDedup(authContext, name, args, fn) {
-  const key = `${flowKey(authContext)}::${name}::${JSON.stringify(args)}`;
-  const now = Date.now();
-  const existing = dedupCache.get(key);
-  if (existing && existing.expiresAt > now) return existing.promise;
-  const promise = fn().catch((err) => {
-    dedupCache.delete(key);
-    throw err;
-  });
-  dedupCache.set(key, { promise, expiresAt: now + DEDUP_WINDOW_MS });
-  return promise;
-}
-
-function getActiveContext(authContext) {
-  const key = flowKey(authContext);
-  if (!activeContextByFlow.has(key)) activeContextByFlow.set(key, new Map());
-  return activeContextByFlow.get(key);
-}
-
-function getHiveUiState(authContext) {
-  const key = flowKey(authContext);
-  if (!hiveUiStateByFlow.has(key)) {
-    hiveUiStateByFlow.set(key, {
-      currentScreen: "startup",
-      history: [],
-      selectedFiles: [],
-      filters: {},
-      scrollPosition: {},
-      permissions: {},
-      modal: null,
-      open: false,
-      focused: false,
-      revision: 0,
-    });
-  }
-  return hiveUiStateByFlow.get(key);
-}
-
-function hiveUiSnapshot(authContext, extra = {}) {
-  const hiveUiState = getHiveUiState(authContext);
+function hiveUiSnapshot(extra = {}) {
   return {
     mode: "ui_controller",
     ui: { ...hiveUiState, history: [...hiveUiState.history], selectedFiles: [...hiveUiState.selectedFiles] },
-    context: contextStructured(authContext),
+    context: contextStructured(),
     ...extra,
   };
 }
@@ -138,8 +91,8 @@ async function readConfig() {
   }
 }
 
-function contextArray(authContext) {
-  return [...getActiveContext(authContext).values()].sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.path.localeCompare(b.path));
+function contextArray() {
+  return [...activeContext.values()].sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.path.localeCompare(b.path));
 }
 
 function isBackgroundUiPath(filepath = "") {
@@ -154,8 +107,8 @@ function isBackgroundUiPath(filepath = "") {
     || name === "project_rules.md";
 }
 
-function contextStructured(authContext, extra = {}) {
-  const files = contextArray(authContext).filter((file) => !isBackgroundUiPath(file.path));
+function contextStructured(extra = {}) {
+  const files = contextArray().filter((file) => !isBackgroundUiPath(file.path));
   return {
     mode: "active",
     activeFiles: files,
@@ -165,8 +118,7 @@ function contextStructured(authContext, extra = {}) {
   };
 }
 
-function trackFile(authContext, filepath, characters, source = "manual", truncated = false, pinned = false) {
-  const activeContext = getActiveContext(authContext);
+function trackFile(filepath, characters, source = "manual", truncated = false, pinned = false) {
   const key = normalize(filepath);
   const now = Date.now();
   const existingPinned = activeContext.get(key)?.pinned || false;
@@ -182,7 +134,7 @@ function trackFile(authContext, filepath, characters, source = "manual", truncat
   });
 }
 
-function visibleStartupResult(authContext, text, project, loadstrength) {
+function visibleStartupResult(text, project, loadstrength) {
   const marker = "Working files loaded into context:";
   const section = text.includes(marker) ? text.split(marker)[1].split("Reply to the user with ONLY")[0] : "";
   const matches = [...section.matchAll(/^===== (.+?) =====$/gm)];
@@ -193,16 +145,16 @@ function visibleStartupResult(authContext, text, project, loadstrength) {
     const tail = section.slice(section.indexOf(`===== ${filepath} =====`) + filepath.length + 12);
     const next = tail.indexOf("\n=====");
     const body = next >= 0 ? tail.slice(0, next) : tail;
-    trackFile(authContext, filepath, body.length, "startup", body.includes("startup copy truncated"));
+    trackFile(filepath, body.length, "startup", body.includes("startup copy truncated"));
   }
   const projects = String(project || "Master").split(":").map((value) => value.trim()).filter(Boolean);
-  return contextStructured(authContext, {
+  return contextStructured({
     mode: "loaded",
     projects,
     loadstrength,
-    visibleLoadedFiles: contextArray(authContext).filter((file) => !isBackgroundUiPath(file.path)),
-    loadedFileCount: contextArray(authContext).filter((file) => !isBackgroundUiPath(file.path)).length,
-    truncatedFileCount: contextArray(authContext).filter((file) => !isBackgroundUiPath(file.path) && file.truncated).length,
+    visibleLoadedFiles: contextArray().filter((file) => !isBackgroundUiPath(file.path)),
+    loadedFileCount: contextArray().filter((file) => !isBackgroundUiPath(file.path)).length,
+    truncatedFileCount: contextArray().filter((file) => !isBackgroundUiPath(file.path) && file.truncated).length,
   });
 }
 
@@ -359,7 +311,7 @@ async function collectMegaFiles() {
   return files;
 }
 
-async function runOrbitStartup(authContext, { project, loadstrength, mega = false, selectedFiles = [], taskFiles = [] }) {
+async function runOrbitStartup({ project, loadstrength, mega = false, selectedFiles = [], taskFiles = [] }) {
   const startupFile = STARTUP_PROJECTS[project];
   if (!startupFile) throw new Error(`Unknown project "${project}". Use 1. Legal or 2. Wellbeing.`);
   const strength = String(loadstrength || "medium").toLowerCase();
@@ -384,7 +336,7 @@ async function runOrbitStartup(authContext, { project, loadstrength, mega = fals
     try {
       const content = await readableStartupText(filepath);
       loaded.push({ filepath, content, characters: content.length, truncated: false, mandatory: true });
-      trackFile(authContext, filepath, content.length, "startup-required", false, true);
+      trackFile(filepath, content.length, "startup-required", false, true);
     } catch (error) {
       failed.push({ filepath, error: error.message, mandatory: true });
     }
@@ -406,7 +358,7 @@ async function runOrbitStartup(authContext, { project, loadstrength, mega = fals
       const content = full.slice(0, Math.min(limits.perFileCharacters, room));
       optionalTotal += content.length;
       loaded.push({ filepath, content, characters: full.length, truncated: content.length < full.length, mandatory: false });
-      trackFile(authContext, filepath, content.length, mega ? "mega" : "startup", content.length < full.length);
+      trackFile(filepath, content.length, mega ? "mega" : "startup", content.length < full.length);
     } catch (error) {
       failed.push({ filepath, error: error.message, mandatory: false });
     }
@@ -417,7 +369,7 @@ async function runOrbitStartup(authContext, { project, loadstrength, mega = fals
   const confirmation = `${project} active. ${mega ? "MEGA 0. Core + 1. Legal + 2. Wellbeing" : strength.toUpperCase()} context loaded. ${loaded.length} files read (${optional.length} expanded preset files plus required context). Ready.`;
   return {
     content: [{ type: "text", text: `[INTERNAL ORBITFS STARTUP CONTEXT - read silently; do not claim files not listed as loaded.]\n\n${blocks.join("\n\n")}\n\n${confirmation}` }],
-    structuredContent: contextStructured(authContext, {
+    structuredContent: contextStructured({
       mode: "loaded",
       projects: [project],
       loadstrength: strength,
@@ -433,8 +385,8 @@ async function runOrbitStartup(authContext, { project, loadstrength, mega = fals
   };
 }
 
-async function replayActiveContext(authContext) {
-  const files = contextArray(authContext).filter((file) => !isBackgroundUiPath(file.path));
+async function replayActiveContext() {
+  const files = contextArray().filter((file) => !isBackgroundUiPath(file.path));
   const blocks = [];
   const failed = [];
   for (const file of files) {
@@ -455,11 +407,11 @@ ${content}`);
 
 ${blocks.join("\n\n")}`
       : "No active Hive files." }],
-    structuredContent: contextStructured(authContext, { replayed: blocks.length, failedFiles: failed }),
+    structuredContent: contextStructured({ replayed: blocks.length, failedFiles: failed }),
   };
 }
 
-function registerExtraTools(server, authContext) {
+function registerExtraTools(server) {
   if (extraToolsRegistered.has(server)) return;
   extraToolsRegistered.add(server);
   const uiMeta = { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI };
@@ -477,7 +429,6 @@ function registerExtraTools(server, authContext) {
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: false },
     _meta: uiMeta,
   }, async ({ action, screen, target, modal, options }) => {
-    const hiveUiState = getHiveUiState(authContext);
     if (action === "open") {
       const next = screen || "startup";
       if (hiveUiState.open && hiveUiState.currentScreen !== next) hiveUiState.history.push(hiveUiState.currentScreen);
@@ -506,7 +457,7 @@ function registerExtraTools(server, authContext) {
     if (target) hiveUiState.selectedFiles = [target];
     if (options) hiveUiState.filters = { ...hiveUiState.filters, ...options };
     const text = action === "status" ? `Hive UI: ${hiveUiState.open ? "open" : "closed"}; screen=${hiveUiState.currentScreen}; modal=${hiveUiState.modal || "none"}; history=${hiveUiState.history.length}` : `Hive UI ${action}: ${screen || modal || hiveUiState.currentScreen}`;
-    return { content: [{ type: "text", text }], structuredContent: hiveUiSnapshot(authContext, { action, target: target || null }) };
+    return { content: [{ type: "text", text }], structuredContent: hiveUiSnapshot({ action, target: target || null }) };
   });
 
   server.registerTool("show_hive", {
@@ -517,7 +468,7 @@ function registerExtraTools(server, authContext) {
     _meta: uiMeta,
   }, async ({ view }) => {
     const config = await readConfig();
-    return { content: [{ type: "text", text: "The Hive interface is open." }], structuredContent: contextStructured(authContext, { mode: "chooser", view: view || "startup", config }) };
+    return { content: [{ type: "text", text: "The Hive interface is open." }], structuredContent: contextStructured({ mode: "chooser", view: view || "startup", config }) };
   });
 
   server.registerTool("list_active_context", {
@@ -526,7 +477,7 @@ function registerExtraTools(server, authContext) {
     inputSchema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: uiMeta,
-  }, async () => replayActiveContext(authContext));
+  }, async () => replayActiveContext());
 
   server.registerTool("unload_context_file", {
     title: "Unload Hive context file",
@@ -535,12 +486,11 @@ function registerExtraTools(server, authContext) {
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: uiMeta,
   }, async ({ filepath }) => {
-    const activeContext = getActiveContext(authContext);
     const key = normalize(filepath);
     const current = activeContext.get(key);
     if (current?.pinned) throw new Error(`${key} is pinned startup-required context and cannot be unloaded individually.`);
     activeContext.delete(key);
-    return { content: [{ type: "text", text: `[HIVE CONTEXT UPDATE] ${key} is unloaded and must no longer be treated as active Hive context.` }], structuredContent: contextStructured(authContext) };
+    return { content: [{ type: "text", text: `[HIVE CONTEXT UPDATE] ${key} is unloaded and must no longer be treated as active Hive context.` }], structuredContent: contextStructured() };
   });
 
   server.registerTool("clear_active_context", {
@@ -550,9 +500,8 @@ function registerExtraTools(server, authContext) {
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: uiMeta,
   }, async () => {
-    const activeContext = getActiveContext(authContext);
     for (const [key, file] of activeContext) if (!file.pinned) activeContext.delete(key);
-    return { content: [{ type: "text", text: "[HIVE CONTEXT UPDATE] Unpinned Hive files are no longer active." }], structuredContent: contextStructured(authContext) };
+    return { content: [{ type: "text", text: "[HIVE CONTEXT UPDATE] Unpinned Hive files are no longer active." }], structuredContent: contextStructured() };
   });
 
   server.registerTool("load_all_profiles", {
@@ -567,7 +516,7 @@ function registerExtraTools(server, authContext) {
     for (const filepath of paths) {
       try {
         const data = await readProfile(filepath);
-        trackFile(authContext, filepath, data.length, "profiles", false);
+        trackFile(filepath, data.length, "profiles", false);
         blocks.push(`===== ${filepath} =====\n${data}`);
       } catch (error) {
         blocks.push(`===== ${filepath} =====\n(unavailable: ${error.message})`);
@@ -575,7 +524,7 @@ function registerExtraTools(server, authContext) {
     }
     return {
       content: [{ type: "text", text: `[INTERNAL HIVE PROFILE CONTEXT - Read every profile below and treat each as active context. Do not summarize unless asked.]\n\n${blocks.join("\n\n")}` }],
-      structuredContent: contextStructured(authContext, { mode: "loaded", profileCount: paths.length }),
+      structuredContent: contextStructured({ mode: "loaded", profileCount: paths.length }),
     };
   });
 }
@@ -588,14 +537,14 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     return originalTool.call(this, name, description, schema, async (args) => {
       const result = await handler(args);
       const text = (result?.content || []).map((item) => item?.text || "").join("\n");
-      trackFile(this.authContext, args.filepath, text.length, "manual", false);
+      trackFile(args.filepath, text.length, "manual", false);
       return result;
     });
   }
 
   if (name !== "startup_firestorm") return originalTool.call(this, name, description, schema, handler);
 
-  registerExtraTools(this, this.authContext);
+  registerExtraTools(this);
   return this.registerTool("startup", {
     title: "Start The Hive project",
     description: "Use for /startup. With no arguments, show the project and load-strength chooser. With project and strength, load real Hive startup context and show what became active.",
@@ -623,9 +572,8 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     },
   }, async ({ project, loadstrength, mega, selectedFiles, taskFiles }) => {
     const config = await readConfig();
-    if (!project) return { content: [{ type: "text", text: "Choose a project and load strength in the Startup UI." }], structuredContent: contextStructured(this.authContext, { mode: "chooser", config }) };
-    const args = { project, loadstrength: loadstrength || config.defaultStrength || "medium", mega: !!mega, selectedFiles: selectedFiles || [], taskFiles: taskFiles || [] };
-    return withDedup(this.authContext, "startup", args, () => runOrbitStartup(this.authContext, args));
+    if (!project) return { content: [{ type: "text", text: "Choose a project and load strength in the Startup UI." }], structuredContent: contextStructured({ mode: "chooser", config }) };
+    return runOrbitStartup({ project, loadstrength: loadstrength || config.defaultStrength || "medium", mega: !!mega, selectedFiles: selectedFiles || [], taskFiles: taskFiles || [] });
   });
 };
 
