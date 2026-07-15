@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import mammoth from "mammoth";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -9,10 +10,48 @@ const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.HIVE_ROOT;
 const WIDGET_URI = "ui://widget/orbitfs-hive-v6.html";
 const HELP_WIDGET_URI = "ui://widget/orbitfs-help-v1.html";
-const WIDGET_HTML = await fs.readFile(path.join(SERVER_DIR, "app/widget/index.html"), "utf8");
+
+// Widget assembly: each widget is built from a host-agnostic shell (markup/CSS)
+// plus the shared engine logic (core.js) plus one bridge implementation per
+// host (bridge.chatgpt.js for window.openai, bridge.claude.js for the
+// official @modelcontextprotocol/ext-apps App class). Both bridge scripts are
+// always inlined into the one served resource; each is a no-op unless its own
+// host is actually detected at runtime in-browser - see app/widget/core.js.
+const require = createRequire(import.meta.url);
+const EXT_APPS_BUNDLE = (
+  await fs.readFile(require.resolve("@modelcontextprotocol/ext-apps/app-with-deps"), "utf8")
+).replace(/export\{([^}]+)\};?\s*$/, (_, body) =>
+  "globalThis.ExtApps={" +
+  body
+    .split(",")
+    .map((p) => {
+      const [local, exported] = p.split(" as ").map((s) => s.trim());
+      return `${exported ?? local}:${local}`;
+    })
+    .join(",") +
+  "};"
+);
+const BRIDGE_CHATGPT_JS = await fs.readFile(path.join(SERVER_DIR, "app/widget/bridge.chatgpt.js"), "utf8");
+const BRIDGE_CLAUDE_JS = await fs.readFile(path.join(SERVER_DIR, "app/widget/bridge.claude.js"), "utf8");
+
+function assembleWidget(shellHtml, coreJs) {
+  return shellHtml
+    .replace("/*__EXT_APPS_BUNDLE__*/", () => EXT_APPS_BUNDLE)
+    .replace("/*__BRIDGE_CHATGPT__*/", () => BRIDGE_CHATGPT_JS)
+    .replace("/*__BRIDGE_CLAUDE__*/", () => BRIDGE_CLAUDE_JS)
+    .replace("/*__CORE_JS__*/", () => coreJs);
+}
+
+const WIDGET_SHELL = await fs.readFile(path.join(SERVER_DIR, "app/widget/shell.html"), "utf8");
+const WIDGET_CORE_JS = await fs.readFile(path.join(SERVER_DIR, "app/widget/core.js"), "utf8");
+const WIDGET_HTML = assembleWidget(WIDGET_SHELL, WIDGET_CORE_JS);
+
 const COMMAND_HELP = JSON.parse(await fs.readFile(path.join(SERVER_DIR, "app/widget/commands.json"), "utf8"));
-const HELP_WIDGET_TEMPLATE = await fs.readFile(path.join(SERVER_DIR, "app/widget/help.html"), "utf8");
-const HELP_WIDGET_HTML = HELP_WIDGET_TEMPLATE.replace("__ORBITFS_COMMANDS__", JSON.stringify(COMMAND_HELP).replace(/</g, "\u003c"));
+const HELP_SHELL = await fs.readFile(path.join(SERVER_DIR, "app/widget/help-shell.html"), "utf8");
+const HELP_CORE_TEMPLATE = await fs.readFile(path.join(SERVER_DIR, "app/widget/help-core.js"), "utf8");
+const HELP_CORE_JS = HELP_CORE_TEMPLATE.replace("__ORBITFS_COMMANDS__", () => JSON.stringify(COMMAND_HELP).replace(/</g, "\u003c"));
+const HELP_WIDGET_HTML = assembleWidget(HELP_SHELL, HELP_CORE_JS);
+
 const CONFIG_PATH = path.join(ROOT, "_system", "Config", "startup-loading.json");
 const originalTool = McpServer.prototype.tool;
 const resourceRegistered = new WeakSet();
@@ -210,36 +249,46 @@ function visibleStartupResult(authContext, text, project, loadstrength) {
   });
 }
 
+// Claude-facing widget metadata: MCP Apps spec keys under _meta.ui.*
+// (resourceUri is set at the tool-result call site, not here).
+function buildClaudeUiMeta(widgetDomain) {
+  return {
+    prefersBorder: true,
+    csp: { connectDomains: [widgetDomain], resourceDomains: [widgetDomain] },
+  };
+}
+
+// ChatGPT Apps SDK-facing widget metadata: openai/* namespaced keys, ignored
+// by any host (Claude included) that doesn't recognize them.
+function buildChatGptMeta(widgetDescription) {
+  return {
+    "openai/widgetDescription": widgetDescription,
+    "openai/widgetPrefersBorder": true,
+  };
+}
+
 function registerWidget(server) {
   if (resourceRegistered.has(server)) return;
   resourceRegistered.add(server);
   const widgetDomain = getWidgetDomain();
   const widgetMeta = {
-    ui: {
-      prefersBorder: true,
-      csp: { connectDomains: [widgetDomain], resourceDomains: [widgetDomain] },
-    },
-    "openai/widgetDescription": "The OrbitFS startup chooser, active context manager, file browser and upload controls.",
-    "openai/widgetPrefersBorder": true,
+    ui: buildClaudeUiMeta(widgetDomain),
+    ...buildChatGptMeta("The OrbitFS startup chooser, active context manager, file browser and upload controls."),
   };
   const helpMeta = {
-    ui: {
-      prefersBorder: true,
-      csp: { connectDomains: [widgetDomain], resourceDomains: [widgetDomain] },
-    },
-    "openai/widgetDescription": "Searchable OrbitFS ChatGPT command reference with usage and short descriptions.",
-    "openai/widgetPrefersBorder": true,
+    ui: buildClaudeUiMeta(widgetDomain),
+    ...buildChatGptMeta("Searchable OrbitFS command reference with usage and short descriptions."),
   };
   server.registerResource(
     "orbitfs-ui",
     WIDGET_URI,
-    { title: "OrbitFS UI", description: "OrbitFS controls inside ChatGPT", mimeType: "text/html;profile=mcp-app", _meta: widgetMeta },
+    { title: "OrbitFS UI", description: "OrbitFS controls inside ChatGPT and Claude", mimeType: "text/html;profile=mcp-app", _meta: widgetMeta },
     async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: WIDGET_HTML, _meta: widgetMeta }] })
   );
   server.registerResource(
     "orbitfs-help",
     HELP_WIDGET_URI,
-    { title: "OrbitFS Command Help", description: "Verified OrbitFS ChatGPT commands", mimeType: "text/html;profile=mcp-app", _meta: helpMeta },
+    { title: "OrbitFS Command Help", description: "Verified OrbitFS commands", mimeType: "text/html;profile=mcp-app", _meta: helpMeta },
     async () => ({ contents: [{ uri: HELP_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: HELP_WIDGET_HTML, _meta: helpMeta }] })
   );
 }
