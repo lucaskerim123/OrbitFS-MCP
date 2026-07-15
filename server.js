@@ -429,7 +429,7 @@ async function collectMegaFiles() {
 async function runOrbitStartup(authContext, { project, loadstrength, mega = false, selectedFiles = [], taskFiles = [] }) {
   const startupFile = STARTUP_PROJECTS[project];
   if (!startupFile) throw new Error(`Unknown project "${project}". Use 1. Legal or 2. Wellbeing.`);
-  const strength = String(loadstrength || "medium").toLowerCase();
+  const strength = String(loadstrength).toLowerCase();
   if (!["low", "medium", "high", "custom1", "custom2", "custom"].includes(strength)) throw new Error("Use low, medium, high, custom1, custom2, or custom.");
 
   const config = await readConfig();
@@ -732,13 +732,14 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
   registerExtraTools(this, this.authContext);
   return this.registerTool("startup", {
     title: "Start The OrbitFS project",
-    description: "Use for /startup. With no arguments, show the project and load-strength chooser. With project and strength, load real OrbitFS startup context and show what became active.",
+    description: "Use for /startup. With no arguments, show the project and load-strength chooser. Loading is allowed only after the Startup UI sends an explicit confirmed selection.",
     inputSchema: {
       project: z.string().optional().describe("1. Legal or 2. Wellbeing"),
       loadstrength: z.enum(["low", "medium", "high", "custom1", "custom2", "custom"]).optional(),
       mega: z.boolean().optional(),
       selectedFiles: z.array(z.string()).optional(),
       taskFiles: z.array(z.string()).optional(),
+      uiSelectionConfirmed: z.boolean().optional().describe("Internal Startup UI confirmation flag. Required to load files; plain /startup or model-supplied defaults must omit it."),
     },
     outputSchema: {
       mode: z.string(),
@@ -755,10 +756,17 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
       "openai/toolInvocation/invoking": "Loading The OrbitFS project...",
       "openai/toolInvocation/invoked": "The OrbitFS project loaded",
     },
-  }, async ({ project, loadstrength, mega, selectedFiles, taskFiles }) => {
+  }, async ({ project, loadstrength, mega, selectedFiles, taskFiles, uiSelectionConfirmed }) => {
     const config = await readConfig();
     if (!project) return { content: [{ type: "text", text: "Choose a project and load strength in the Startup UI." }], structuredContent: contextStructured(this.authContext, { mode: "chooser", config }) };
-    const args = { project, loadstrength: loadstrength || config.defaultStrength || "medium", mega: !!mega, selectedFiles: selectedFiles || [], taskFiles: taskFiles || [] };
+    if (!uiSelectionConfirmed) {
+      return {
+        content: [{ type: "text", text: "Choose a project and load strength in the Startup UI before loading files." }],
+        structuredContent: contextStructured(this.authContext, { mode: "chooser", config, rejectedLoad: true }),
+      };
+    }
+    if (!loadstrength) throw new Error("Startup UI selection must include loadstrength.");
+    const args = { project, loadstrength, mega: !!mega, selectedFiles: selectedFiles || [], taskFiles: taskFiles || [] };
     return withDedup(this.authContext, "startup", args, () => runOrbitStartup(this.authContext, args));
   });
 };
