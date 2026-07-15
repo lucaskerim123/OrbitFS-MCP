@@ -8,8 +8,10 @@ import { z } from "zod";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.HIVE_ROOT;
-const WIDGET_URI = "ui://widget/orbitfs-hive-v6.html";
-const HELP_WIDGET_URI = "ui://widget/orbitfs-help-v1.html";
+const WIDGET_URI = "ui://widget/orbitfs-hive-v7-mcp.html";
+const CHATGPT_WIDGET_URI = "ui://widget/orbitfs-hive-v7-chatgpt.html";
+const HELP_WIDGET_URI = "ui://widget/orbitfs-help-v2-mcp.html";
+const CHATGPT_HELP_WIDGET_URI = "ui://widget/orbitfs-help-v2-chatgpt.html";
 
 // Widget assembly: each widget is built from a host-agnostic shell (markup/CSS)
 // plus the shared engine logic (core.js) plus one bridge implementation per
@@ -255,15 +257,18 @@ function buildClaudeUiMeta(widgetDomain) {
   return {
     prefersBorder: true,
     csp: { connectDomains: [widgetDomain], resourceDomains: [widgetDomain] },
+    domain: widgetDomain,
   };
 }
 
 // ChatGPT Apps SDK-facing widget metadata: openai/* namespaced keys, ignored
 // by any host (Claude included) that doesn't recognize them.
-function buildChatGptMeta(widgetDescription) {
+function buildChatGptMeta(widgetDescription, widgetDomain) {
   return {
     "openai/widgetDescription": widgetDescription,
     "openai/widgetPrefersBorder": true,
+    "openai/widgetCSP": { connect_domains: [widgetDomain], resource_domains: [widgetDomain] },
+    "openai/widgetDomain": widgetDomain,
   };
 }
 
@@ -273,11 +278,11 @@ function registerWidget(server) {
   const widgetDomain = getWidgetDomain();
   const widgetMeta = {
     ui: buildClaudeUiMeta(widgetDomain),
-    ...buildChatGptMeta("The OrbitFS startup chooser, active context manager, file browser and upload controls."),
+    ...buildChatGptMeta("The OrbitFS startup chooser, active context manager, file browser and upload controls.", widgetDomain),
   };
   const helpMeta = {
     ui: buildClaudeUiMeta(widgetDomain),
-    ...buildChatGptMeta("Searchable OrbitFS command reference with usage and short descriptions."),
+    ...buildChatGptMeta("Searchable OrbitFS command reference with usage and short descriptions.", widgetDomain),
   };
   server.registerResource(
     "orbitfs-ui",
@@ -286,10 +291,22 @@ function registerWidget(server) {
     async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: WIDGET_HTML, _meta: widgetMeta }] })
   );
   server.registerResource(
+    "orbitfs-ui-chatgpt",
+    CHATGPT_WIDGET_URI,
+    { title: "OrbitFS UI", description: "OrbitFS controls inside ChatGPT", mimeType: "text/html+skybridge", _meta: widgetMeta },
+    async () => ({ contents: [{ uri: CHATGPT_WIDGET_URI, mimeType: "text/html+skybridge", text: WIDGET_HTML, _meta: widgetMeta }] })
+  );
+  server.registerResource(
     "orbitfs-help",
     HELP_WIDGET_URI,
     { title: "OrbitFS Command Help", description: "Verified OrbitFS commands", mimeType: "text/html;profile=mcp-app", _meta: helpMeta },
     async () => ({ contents: [{ uri: HELP_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: HELP_WIDGET_HTML, _meta: helpMeta }] })
+  );
+  server.registerResource(
+    "orbitfs-help-chatgpt",
+    CHATGPT_HELP_WIDGET_URI,
+    { title: "OrbitFS Command Help", description: "Verified OrbitFS commands", mimeType: "text/html+skybridge", _meta: helpMeta },
+    async () => ({ contents: [{ uri: CHATGPT_HELP_WIDGET_URI, mimeType: "text/html+skybridge", text: HELP_WIDGET_HTML, _meta: helpMeta }] })
   );
 }
 
@@ -529,8 +546,8 @@ ${blocks.join("\n\n")}`
 function registerExtraTools(server, authContext) {
   if (extraToolsRegistered.has(server)) return;
   extraToolsRegistered.add(server);
-  const uiMeta = { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI };
-  const helpMeta = { ui: { resourceUri: HELP_WIDGET_URI }, "openai/outputTemplate": HELP_WIDGET_URI };
+  const uiMeta = { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": CHATGPT_WIDGET_URI };
+  const helpMeta = { ui: { resourceUri: HELP_WIDGET_URI }, "openai/outputTemplate": CHATGPT_HELP_WIDGET_URI };
 
   server.registerTool("showcp", {
     title: "Open OrbitFS Control Panel",
@@ -548,6 +565,7 @@ function registerExtraTools(server, authContext) {
     return {
       content: [{ type: "text", text: "OrbitFS control panel opened." }],
       structuredContent: hiveUiSnapshot(authContext, { mode: "ui", view: next }),
+      _meta: uiMeta,
     };
   });
 
@@ -604,7 +622,7 @@ function registerExtraTools(server, authContext) {
     if (target) hiveUiState.selectedFiles = [target];
     if (options) hiveUiState.filters = { ...hiveUiState.filters, ...options };
     const text = action === "status" ? `OrbitFS UI: ${hiveUiState.open ? "open" : "closed"}; screen=${hiveUiState.currentScreen}; modal=${hiveUiState.modal || "none"}; history=${hiveUiState.history.length}` : `OrbitFS UI ${action}: ${screen || modal || hiveUiState.currentScreen}`;
-    return { content: [{ type: "text", text }], structuredContent: hiveUiSnapshot(authContext, { action, target: target || null }) };
+    return { content: [{ type: "text", text }], structuredContent: hiveUiSnapshot(authContext, { action, target: target || null }), _meta: uiMeta };
   });
 
   server.registerTool("show_orbitfs_ui", {
@@ -615,7 +633,17 @@ function registerExtraTools(server, authContext) {
     _meta: uiMeta,
   }, async ({ view }) => {
     const config = await readConfig();
-    return { content: [{ type: "text", text: "The OrbitFS UI is open." }], structuredContent: contextStructured(authContext, { mode: "chooser", view: view || "startup", config }) };
+    const next = view || "startup";
+    const hiveUiState = getHiveUiState(authContext);
+    hiveUiState.currentScreen = next;
+    hiveUiState.open = true;
+    hiveUiState.focused = true;
+    hiveUiState.modal = null;
+    return {
+      content: [{ type: "text", text: "The OrbitFS UI is open." }],
+      structuredContent: hiveUiSnapshot(authContext, { mode: "chooser", view: next, config }),
+      _meta: uiMeta,
+    };
   });
 
   server.registerTool("list_active_context", {
@@ -751,7 +779,7 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: {
       ui: { resourceUri: WIDGET_URI },
-      "openai/outputTemplate": WIDGET_URI,
+      "openai/outputTemplate": CHATGPT_WIDGET_URI,
       "openai/toolInvocation/invoking": "Loading The OrbitFS project...",
       "openai/toolInvocation/invoked": "The OrbitFS project loaded",
     },
