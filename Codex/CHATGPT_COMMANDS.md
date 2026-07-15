@@ -1,37 +1,39 @@
-# ChatGPT Typed Command Map
+# OrbitFS ChatGPT Commands
 
-These are ChatGPT-only typed-text command conventions. Claude already has
-its own MCP prompt setup separately.
+This is the authoritative slash-command list exposed by the live OrbitFS MCP server. Run `/orbithelp` to open the searchable command UI.
 
-ChatGPT should map these messages onto Actions:
+| Command | Usage | Description |
+|---|---|---|
+| `/orbithelp` | `/orbithelp` | Open the separate OrbitFS command help window. |
+| `/showcp` | `/showcp` | Open the main OrbitFS control panel on Startup. |
+| `/context` | `/context` | Open the main OrbitFS control panel on Context. |
+| `/files` | `/files` | Open the main OrbitFS control panel on Files. |
+| `/vent` | `/vent` | Open the main OrbitFS control panel on Vent. |
+| `/journal` | `/journal` | Open the main OrbitFS control panel on Journal. |
+| `/server-status` | `/server-status` | Return the live OrbitFS server, panel, cloud and Sorter status. |
+| `/startup` | `/startup [project] [loadstrength]` | Open the startup chooser, or load 1. Legal / 2. Wellbeing using low, medium, high, custom1 or custom2. |
+| `/loadfile` | `/loadfile <filepath>` | Load one complete text or DOCX file into active context. |
+| `/list` | `/list [subpath]` | List files and folders at the root or inside a folder. |
+| `/read` | `/read <filepath>` | Read a text file by its OrbitFS-relative path. |
+| `/viewfile` | `/viewfile <filepath>` | Open a PDF, DOCX or text file in the expandable viewer. |
+| `/previewfile` | `/previewfile <filepath>` | Open a compact preview of a PDF, DOCX or text file. |
+| `/search` | `/search <query> [subpath]` | Search text content, optionally inside one folder. |
+| `/stat` | `/stat <filepath>` | Show file size, modified time and SHA-256 hash. |
+| `/openfileweb` | `/openfileweb <filepath>` | Create a browser link for a file. The link expires after 15 minutes. |
+| `/move` | `/move <source> <destination_folder> [new_name]` | Resolve and preview a move. The exact paths must be confirmed before execution. |
+| `/mkdir` | `/mkdir <subpath>` | Create a new folder at the supplied relative path. |
+| `/trash` | `/trash <filepath>` | Move a file or folder into _trash instead of hard deleting it. |
+| `/emptybin` | `/emptybin` | Permanently empty _trash after listing and explicit confirmation. |
+| `/ventmode` | `/ventmode <on|off>` | Turn Pure Private Vent Mode on or off. |
+| `/styleentry` | `/styleentry <text> <title> [entry_date]` | Save the final Vent draft. Entry date uses DD-MM-YYYY when provided. |
+| `/uploadvent` | `/uploadvent` | Upload the exact saved Vent draft without another confirmation. |
 
-| Trigger | Args | Action | Notes |
-|---|---|---|---|
-| `/server-status` | none | `getServerStatus` | Exact hard trigger. Return `text` exactly. |
-| `server status` | none | `getServerStatus` | Plain-English hard trigger. |
-| `show server status` | none | `getServerStatus` | Plain-English hard trigger. |
-| `show orbitfs status` | none | `getServerStatus` | Plain-English hard trigger. |
-| `/openfileweb` | `filepath` | `getFileWebLink` | Returns a browser link for one file. |
-| `/startup` | `project`, `load_level` | `startupFirestorm` | Defaults load to `med`. Accepts `light/normal/full`. |
-| `/list` | `subpath` | `listFolder` | Omit `subpath` for root. |
-| `/read` | `filepath` | `readFile` | Text files only. |
-| `/search` | `query`, `subpath` | `searchFiles` | Text-content search. Omit `subpath` for root. |
-| `/stat` | `filepath` | `statFile` | Returns size, mtime, and sha256. |
-| `/move` | `from`, `to` | `moveFile` | Admin command. Confirm exact paths first. |
-| `/mkdir` | `subpath` | `createFolder` | Admin command. Confirm exact path first. |
-| `/trash` | `filepath` | `moveToTrash` | Admin command. Prefer over hard delete. |
-| `/sort` | none | `previewSortInbox` then `applySortInbox` | Preview first. Never auto-apply. |
-| `/emptybin` | none | `emptyTrash` | High-risk. Confirm first. |
+## Verification
 
-Deliberately not mapped as quick ChatGPT commands:
-
-- `writeFile` - needs full file content
-- `deleteFile` - hard delete, safer to keep `/trash` as the command path
-- `uploadFile` - binary upload is not a good typed-text command
-- `getTrashConfig` / `setTrashConfig` - admin config, better as explicit Actions
-- `getOAuthState` - operational/admin, not a normal user command
-
-Attachment rule:
-
-- If the user wants to save/upload a binary attachment from ChatGPT and the file only exists as a ChatGPT sandbox attachment/path such as `/mnt/data/...`, do not try `uploadFile`.
-- Call `create_upload_link` instead and send the link immediately.
+- Every command above is registered as an MCP prompt.
+- Every generated prompt targets a tool present in the live MCP tool list.
+- `/showcp` calls the direct `showcp` UI tool.
+- `/orbithelp` calls the separate `orbitfs_help` UI tool.
+- `/startup` uses the live `startup` tool and `loadstrength` argument.
+- `/styleentry` uses the live `save_vent_draft` tool.
+- Sorter is controlled through the OrbitFS Panel; there is no verified ChatGPT `/sort` command in this list.

@@ -1,0 +1,35 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>
+:root{font-family:Inter,system-ui,sans-serif;color:#edf3ff;background:#0b1019;--panel:#141c29;--panel2:#0f1622;--line:#2b374c;--muted:#98a6bd;--blue:#3973c8}
+*{box-sizing:border-box;min-width:0}html,body{margin:0;width:100%;max-width:100%;overflow-x:hidden;background:#0b1019}body{padding:5px}button,input{font:inherit}
+.shell{width:100%;max-width:720px;margin:auto;background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden}.top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 10px;border-bottom:1px solid #222d3d}.brand{min-width:0}.title{font-size:15px;font-weight:800}.subtitle{font-size:10px;color:var(--muted);margin-top:2px}.top-actions{display:flex;gap:5px;flex:0 0 auto}.window-btn{width:30px;height:30px;padding:0;border:1px solid #34435a;border-radius:8px;background:#111a27;color:#dbe7f7;font-size:14px;font-weight:900;line-height:1}.window-btn.close{background:#3a1820;border-color:#71333f;color:#ff9cab}
+.content{padding:9px}.search{width:100%;padding:9px;border:1px solid #34415a;border-radius:9px;background:#0d1420;color:#eef4ff}.summary{margin:7px 0;color:var(--muted);font-size:10px}.groups{display:grid;gap:8px}.group{border:1px solid #29364a;border-radius:10px;background:var(--panel2);overflow:hidden}.group h2{margin:0;padding:8px 9px;border-bottom:1px solid #263248;font-size:11px}.command-list{display:grid}.command{display:grid;grid-template-columns:minmax(115px,.7fr) minmax(0,1.3fr);gap:9px;padding:9px;border-bottom:1px solid #222d3d}.command:last-child{border-bottom:0}.command code{display:block;color:#8bbcff;font-size:10px;font-weight:800;overflow-wrap:anywhere}.command .usage{display:block;margin-top:3px;color:#c5d1e2;font-size:9px;overflow-wrap:anywhere}.command p{margin:0;color:var(--muted);font-size:10px;line-height:1.4}.empty{padding:20px;text-align:center;color:var(--muted);font-size:11px}
+.shell.minimized .content{display:none}.shell.minimized{max-width:330px}.closed-note{display:none;padding:12px;text-align:center;border:1px solid #34435a;border-radius:12px;background:#111a27;color:#c8d4e7;font-size:11px}.closed-note.show{display:block}
+@media(max-width:480px){.command{grid-template-columns:1fr;gap:5px}.shell{max-width:100%}.content{padding:7px}.group h2{font-size:10px}.command{padding:8px}}
+</style>
+</head>
+<body>
+<div id="helpShell" class="shell">
+<header class="top"><div class="brand"><div class="title">OrbitFS Command Help</div><div class="subtitle">Verified ChatGPT slash commands</div></div><div class="top-actions"><button id="minimizeHelp" class="window-btn" type="button" title="Minimize" aria-label="Minimize">_</button><button id="closeHelp" class="window-btn close" type="button" title="Close" aria-label="Close">X</button></div></header>
+<main class="content"><input id="commandSearch" class="search" type="search" placeholder="Search commands, usage or descriptions" autocomplete="off"><div id="helpSummary" class="summary"></div><div id="commandGroups" class="groups"></div></main>
+</div>
+<div id="closedNote" class="closed-note">OrbitFS Command Help closed. Run /orbithelp to open it again.</div>
+<script>
+const COMMANDS=__ORBITFS_COMMANDS__;
+const shell=document.getElementById('helpShell');
+const groups=document.getElementById('commandGroups');
+const summary=document.getElementById('helpSummary');
+const search=document.getElementById('commandSearch');
+function esc(value){return String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
+function render(){const term=search.value.trim().toLowerCase();const filtered=COMMANDS.filter(item=>!term||`${item.command} ${item.usage} ${item.description} ${item.category}`.toLowerCase().includes(term));summary.textContent=`${filtered.length} of ${COMMANDS.length} verified commands`;const categories=[...new Set(filtered.map(item=>item.category))];groups.innerHTML=categories.map(category=>`<section class="group"><h2>${esc(category)}</h2><div class="command-list">${filtered.filter(item=>item.category===category).map(item=>`<article class="command"><div><code>${esc(item.command)}</code><span class="usage">${esc(item.usage)}</span></div><p>${esc(item.description)}</p></article>`).join('')}</div></section>`).join('')||'<div class="empty">No commands match that search.</div>'}
+search.addEventListener('input',render);
+minimizeHelp.addEventListener('click',()=>{const minimized=shell.classList.toggle('minimized');minimizeHelp.textContent=minimized?'[]':'_';minimizeHelp.title=minimized?'Restore':'Minimize'});
+closeHelp.addEventListener('click',async()=>{shell.classList.add('hidden');closedNote.classList.add('show');try{if(window.openai?.requestClose)await window.openai.requestClose()}catch{}});
+render();
+</script>
+</body>
+</html>

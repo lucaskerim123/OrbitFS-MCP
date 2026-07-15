@@ -7,8 +7,12 @@ import { z } from "zod";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.HIVE_ROOT;
-const WIDGET_URI = "ui://widget/orbitfs-hive-v5.html";
+const WIDGET_URI = "ui://widget/orbitfs-hive-v6.html";
+const HELP_WIDGET_URI = "ui://widget/orbitfs-help-v1.html";
 const WIDGET_HTML = await fs.readFile(path.join(SERVER_DIR, "app/widget/index.html"), "utf8");
+const COMMAND_HELP = JSON.parse(await fs.readFile(path.join(SERVER_DIR, "app/widget/commands.json"), "utf8"));
+const HELP_WIDGET_TEMPLATE = await fs.readFile(path.join(SERVER_DIR, "app/widget/help.html"), "utf8");
+const HELP_WIDGET_HTML = HELP_WIDGET_TEMPLATE.replace("__ORBITFS_COMMANDS__", JSON.stringify(COMMAND_HELP).replace(/</g, "\u003c"));
 const CONFIG_PATH = path.join(ROOT, "_system", "Config", "startup-loading.json");
 const originalTool = McpServer.prototype.tool;
 const resourceRegistered = new WeakSet();
@@ -16,7 +20,7 @@ const extraToolsRegistered = new WeakSet();
 const DEFAULT_PUBLIC_ORIGIN = "https://mcp.incendiarynetworks.cc";
 const CONTEXT_TTL_MS = null;
 let capturedLoadFileHandler = null;
-const HIVE_SCREENS = ["startup", "browser", "viewer", "context", "vent", "settings", "permissions", "search", "move", "upload"];
+const HIVE_SCREENS = ["startup", "browser", "files", "viewer", "context", "vent", "journal", "system", "settings", "permissions", "search", "move", "upload"];
 const HIVE_MODALS = ["permissions", "move", "info", "upload", "delete"];
 
 // UI navigation state and loaded-file context are per client (ChatGPT vs Claude vs
@@ -218,11 +222,25 @@ function registerWidget(server) {
     "openai/widgetDescription": "The OrbitFS startup chooser, active context manager, file browser and upload controls.",
     "openai/widgetPrefersBorder": true,
   };
+  const helpMeta = {
+    ui: {
+      prefersBorder: true,
+      csp: { connectDomains: [widgetDomain], resourceDomains: [widgetDomain] },
+    },
+    "openai/widgetDescription": "Searchable OrbitFS ChatGPT command reference with usage and short descriptions.",
+    "openai/widgetPrefersBorder": true,
+  };
   server.registerResource(
     "orbitfs-ui",
     WIDGET_URI,
     { title: "OrbitFS UI", description: "OrbitFS controls inside ChatGPT", mimeType: "text/html;profile=mcp-app", _meta: widgetMeta },
     async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: WIDGET_HTML, _meta: widgetMeta }] })
+  );
+  server.registerResource(
+    "orbitfs-help",
+    HELP_WIDGET_URI,
+    { title: "OrbitFS Command Help", description: "Verified OrbitFS ChatGPT commands", mimeType: "text/html;profile=mcp-app", _meta: helpMeta },
+    async () => ({ contents: [{ uri: HELP_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: HELP_WIDGET_HTML, _meta: helpMeta }] })
   );
 }
 
@@ -463,6 +481,37 @@ function registerExtraTools(server, authContext) {
   if (extraToolsRegistered.has(server)) return;
   extraToolsRegistered.add(server);
   const uiMeta = { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI };
+  const helpMeta = { ui: { resourceUri: HELP_WIDGET_URI }, "openai/outputTemplate": HELP_WIDGET_URI };
+
+  server.registerTool("showcp", {
+    title: "Open OrbitFS Control Panel",
+    description: "Directly open the main OrbitFS control panel. This is the tool for /showcp and the UI navigation slash commands.",
+    inputSchema: { view: z.enum(["startup", "context", "files", "vent", "journal", "system"]).optional() },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    _meta: uiMeta,
+  }, async ({ view }) => {
+    const next = view || "startup";
+    const hiveUiState = getHiveUiState(authContext);
+    hiveUiState.currentScreen = next;
+    hiveUiState.open = true;
+    hiveUiState.focused = true;
+    hiveUiState.modal = null;
+    return {
+      content: [{ type: "text", text: "OrbitFS control panel opened." }],
+      structuredContent: hiveUiSnapshot(authContext, { mode: "ui", view: next }),
+    };
+  });
+
+  server.registerTool("orbitfs_help", {
+    title: "Open OrbitFS Command Help",
+    description: "Open the separate searchable OrbitFS ChatGPT command reference. Use for /orbithelp.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    _meta: helpMeta,
+  }, async () => ({
+    content: [{ type: "text", text: "OrbitFS command help opened." }],
+    structuredContent: { mode: "help", commands: COMMAND_HELP },
+  }));
 
   server.registerTool("orbitfs_ui", {
     title: "The OrbitFS UI controller",

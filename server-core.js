@@ -1844,13 +1844,13 @@ function buildServer(authContext = {}) {
 
   toolPrompt(
     "startup",
-    "Load Project FireStorm startup context for one or more projects",
+    "Open the OrbitFS startup chooser or load a selected project preset",
     {
-      project: z.string().describe("Master, Court, Mental, Media, or combined with ':' e.g. Court:Mental"),
-      load_level: z.string().optional().describe("low, med, high (default med). Aliases: light, normal, full"),
+      project: z.string().optional().describe("1. Legal or 2. Wellbeing; omit to open the chooser"),
+      loadstrength: z.enum(["low", "medium", "high", "custom1", "custom2"]).optional().describe("Preset strength; defaults to configured medium"),
     },
-    "startup_firestorm",
-    "Reply following the startup contract (normalized command, files loaded, active rules, in-scope folders, confirmation line)."
+    "startup",
+    "With no project, call startup with no arguments to open the chooser. Otherwise use the supplied project and loadstrength."
   );
 
   toolPrompt(
@@ -1913,11 +1913,17 @@ function buildServer(authContext = {}) {
 
   toolPrompt(
     "showcp",
-    "Open the OrbitFS UI control panel widget",
+    "Open the main OrbitFS UI control panel",
     {},
-    "orbitfs_ui",
-    'Call it with action="open" to open the widget on the startup screen.'
+    "showcp",
+    'Call it with no arguments so the control panel opens directly on Startup.'
   );
+
+  toolPrompt("orbithelp", "Open the searchable OrbitFS command help window", {}, "orbitfs_help");
+  toolPrompt("context", "Open the OrbitFS control panel on Context", {}, "showcp", 'Call it with view="context".');
+  toolPrompt("files", "Open the OrbitFS control panel on Files", {}, "showcp", 'Call it with view="files".');
+  toolPrompt("vent", "Open the OrbitFS control panel on Vent", {}, "showcp", 'Call it with view="vent".');
+  toolPrompt("journal", "Open the OrbitFS control panel on Journal", {}, "showcp", 'Call it with view="journal".');
   toolPrompt(
     "move",
     "Move a file or folder using short names",
@@ -1962,12 +1968,12 @@ function buildServer(authContext = {}) {
       title: z.string().describe("A suitable title"),
       entry_date: z.string().optional().describe("DD-MM-YYYY, defaults to today in Sydney time"),
     },
-    "style_vent_entry"
+    "save_vent_draft"
   );
 
   toolPrompt(
     "uploadvent",
-    "Upload the most recently styled Pure Vent Mode draft",
+    "Upload the exact saved Pure Vent Mode draft",
     {},
     "upload_vent_entry",
     "This is the confirmation - do not ask me to confirm again."
