@@ -677,6 +677,18 @@ function registerExtraTools(server, authContext) {
     return { content: [{ type: "text", text: "[ORBITFS CONTEXT UPDATE] Unpinned OrbitFS files are no longer active." }], structuredContent: contextStructured(authContext) };
   });
 
+  server.registerTool("clear_all_context", {
+    title: "Clear all OrbitFS context, including pinned",
+    description: "Unload every file from the active OrbitFS context set, including pinned startup-required files. Use only when the user explicitly wants a full reset, not for routine unloading.",
+    inputSchema: {},
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
+    _meta: uiMeta,
+  }, async () => {
+    const activeContext = getActiveContext(authContext);
+    activeContext.clear();
+    return { content: [{ type: "text", text: "[ORBITFS CONTEXT UPDATE] All OrbitFS files, including pinned startup-required context, are no longer active." }], structuredContent: contextStructured(authContext) };
+  });
+
   server.registerTool("load_all_profiles", {
     title: "Load all Master Profiles",
     description: "Find and fully load all Master Profile text and DOCX files into active ChatGPT context.",

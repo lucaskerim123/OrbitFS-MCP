@@ -27,6 +27,7 @@
     "unload_context_file",
     "unload_context_files",
     "clear_active_context",
+    "clear_all_context",
   ]);
 
   let latestResult = null;
