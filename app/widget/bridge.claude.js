@@ -10,6 +10,25 @@
   const { App } = globalThis.ExtApps;
   const app = new App({ name: "OrbitFS", version: "1.0.0" }, {}, { autoResize: true });
 
+  // Tool calls made from inside the widget go through callServerTool, which
+  // is a silent widget<->server channel - the model never sees the result
+  // unless we forward it. server.js/server-core.js write these particular
+  // tools' content specifically to be read by the model (wrapped in
+  // "[INTERNAL ...]"/"[ORBITFS CONTEXT UPDATE]" framing), so those results
+  // get pushed into the model's context via updateModelContext. Everything
+  // else (browsing, previews, vent/journal status, server status) stays
+  // widget-only - forwarding those too would spam the model with directory
+  // listings on every click for no benefit.
+  const CONTEXT_SYNC_TOOLS = new Set([
+    "startup",
+    "load_file",
+    "load_all_profiles",
+    "list_active_context",
+    "unload_context_file",
+    "unload_context_files",
+    "clear_active_context",
+  ]);
+
   let latestResult = null;
   const viewListeners = [];
 
@@ -33,7 +52,15 @@
 
     async callTool(name, args = {}) {
       await ready;
-      return app.callServerTool({ name, arguments: args });
+      const result = await app.callServerTool({ name, arguments: args });
+      if (CONTEXT_SYNC_TOOLS.has(name) && result?.content?.length && !result.isError) {
+        try {
+          await app.updateModelContext({ content: result.content });
+        } catch (err) {
+          console.error(`OrbitFS: failed to sync "${name}" result into model context:`, err);
+        }
+      }
+      return result;
     },
 
     async sendChatPrompt(text) {
