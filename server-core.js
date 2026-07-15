@@ -45,7 +45,7 @@ const LEGACY_TRASH_FOLDERS = ["?? Trash"];
 // new structure is settled:
 //   "_system", "_sorter", "_trash", "0. Core", "1. Legal",
 //   "2. Wellbeing", "_media"
-const PROTECTED_ROOT_FOLDERS = new Set([]);
+const PROTECTED_ROOT_FOLDERS = new Set(["_sorter"]);
 const DEFAULT_TRASH_RETENTION_DAYS = Number(process.env.TRASH_RETENTION_DAYS || 4);
 const TRASH_PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 // Per-file cap for MCP uploads/fetches. Bumped from 10MB and made configurable
@@ -335,171 +335,8 @@ function filterLegacyTopLevelEntries(subpath = "", entries = []) {
   return entries.filter((entry) => !LEGACY_TRASH_FOLDERS.includes(entry.name));
 }
 
-// Directory-only listing used to give the sorter model a map of where things
-// could go. Capped in depth and count so the prompt stays small.
-async function listFolderTree(base, depth, out) {
-  if (depth <= 0) return out;
-  const entries = await ops.listFiles(base);
-  for (const e of entries) {
-    if (e.type !== "dir") continue;
-    if (base === "" && (e.name === SORT_FOLDER || e.name === TRASH_FOLDER || LEGACY_TRASH_FOLDERS.includes(e.name))) continue;
-    const rel = base ? `${base}/${e.name}` : e.name;
-    out.push(rel);
-    if (out.length >= 400) return out;
-    await listFolderTree(rel, depth - 1, out);
-  }
-  return out;
-}
-
-function sorterNorm(value = "") {
-  return String(value || "").toLowerCase().replace(/[_\-.]+/g, " ");
-}
-
-function scoreSorterFolder(folderPath, hints = [], preferredFolders = []) {
-  const text = sorterNorm(folderPath);
-  let score = 0;
-  for (const hint of hints) {
-    if (text.includes(sorterNorm(hint))) score += 10;
-  }
-  for (const preferred of preferredFolders) {
-    const normalized = sorterNorm(preferred);
-    if (text === normalized || text.startsWith(`${normalized}/`) || text.startsWith(`${normalized} `)) score += 60;
-    else if (text.includes(normalized)) score += 25;
-  }
-  return score;
-}
-
-function findSorterFolder(folders, preferredFolders = []) {
-  for (const preferred of preferredFolders) {
-    const normalized = sorterNorm(preferred);
-    const exact = folders.find((folder) => {
-      const text = sorterNorm(folder);
-      return text === normalized || text.startsWith(`${normalized}/`) || text.startsWith(`${normalized} `);
-    });
-    if (exact) return exact;
-  }
-  return null;
-}
-
-function chooseSorterDestination(folders, hints = [], preferredFolders = [], fallbackHints = []) {
-  let best = null;
-  for (const folder of folders) {
-    let score = scoreSorterFolder(folder, hints, preferredFolders);
-    if (!score && fallbackHints.length) score = scoreSorterFolder(folder, fallbackHints, preferredFolders);
-    if (!best || score > best.score) best = { folder, score };
-  }
-  if (best?.score > 0) return best.folder;
-  return findSorterFolder(folders, preferredFolders);
-}
-
-async function classifyDestination(itemName, isDir, folders) {
-  const text = sorterNorm(itemName);
-  const ext = path.extname(itemName).toLowerCase();
-  const rules = [
-    {
-      name: "Media",
-      match: () => [".mp3", ".wav", ".m4a", ".mp4", ".mov", ".avi", ".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext),
-      hints: ["media", "audio", "video", "photos", "images"],
-      preferredFolders: ["_media"],
-    },
-    {
-      name: "Wellbeing",
-      match: () => /mental|wellbeing|session|mood|sleep|vent|therapy/.test(text),
-      hints: ["wellbeing", "mental", "notes"],
-      preferredFolders: ["2. Wellbeing"],
-    },
-    {
-      name: "Legal",
-      match: () => /statement|witness|victim|police|court|hearing|avo|charge|order|affidavit|mention|adjourn/.test(text),
-      hints: ["legal", "court", "documents", "reference"],
-      preferredFolders: ["1. Legal"],
-    },
-    {
-      name: "Core",
-      match: () => !isDir && [".md", ".txt", ".doc", ".docx", ".pdf"].includes(ext),
-      hints: ["documents", "notes", "imports"],
-      preferredFolders: ["0. Core"],
-    },
-  ];
-
-  for (const rule of rules) {
-    if (!rule.match()) continue;
-    const destination = chooseSorterDestination(folders, rule.hints, rule.preferredFolders, ["imports", "needs review"]);
-    if (destination) {
-      return { destination, isNew: false, reason: `Rule matched: ${rule.name}` };
-    }
-  }
-
-  const fallback = chooseSorterDestination(folders, ["imports", "notes"], ["0. Core"], ["needs review"]);
-  return {
-    destination: fallback || "0. Core",
-    isNew: !fallback,
-    reason: fallback ? "Fallback matched: Core/Documents" : "Fallback created: 0. Core",
-  };
-}
-
-// Dry run: applies deterministic sorter rules to each _sorter item, but does
-// not touch the filesystem. Callers must show this to the user and only move
-// files via applySortMoves() once the destinations are confirmed.
-async function planSortInbox(authContext = {}) {
-  let entries;
-  try {
-    entries = await ops.listFiles(SORT_FOLDER);
-  } catch (err) {
-    if (err.code === "ENOENT") return { proposals: [], errors: [], note: `No ${SORT_FOLDER} folder yet - nothing to sort.` };
-    throw err;
-  }
-  if (!entries.length) return { proposals: [], errors: [], note: `${SORT_FOLDER} is empty - nothing to sort.` };
-
-  const folders = await listFolderTree("", 4, []);
-  const proposals = [];
-  const errors = [];
-
-  for (const e of entries) {
-    const itemName = e.name;
-    try {
-      logEvent("tool.sort_inbox.plan.start", { ...authContext, item: itemName });
-      const { destination, isNew, reason } = await classifyDestination(itemName, e.type === "dir", folders);
-      proposals.push({ item: itemName, isDir: e.type === "dir", destination, isNewFolder: !!isNew, reason });
-      if (isNew) folders.push(destination);
-    } catch (err) {
-      logError("tool.sort_inbox.plan.failed", err, { ...authContext, item: itemName });
-      errors.push({ item: itemName, error: err.message });
-    }
-  }
-
-  logEvent("tool.sort_inbox.planned", { ...authContext, proposedCount: proposals.length, errorCount: errors.length });
-  return { proposals, errors };
-}
-
-// Executes an explicitly confirmed set of moves out of _sorter - the
-// destinations the caller already showed the user, possibly edited by them.
-async function applySortMoves(moves, authContext = {}) {
-  const moved = [];
-  const errors = [];
-
-  for (const move of moves || []) {
-    const itemName = move?.item;
-    const destination = typeof move?.destination === "string" ? move.destination.replace(/^\/+|\/+$/g, "").trim() : "";
-    if (!itemName || !destination) {
-      errors.push({ item: itemName || "(unknown)", error: "Missing item or destination" });
-      continue;
-    }
-    const from = `${SORT_FOLDER}/${itemName}`;
-    const to = `${destination}/${itemName}`;
-    try {
-      await ops.moveFile(from, to);
-      logEvent("file.change.move", { ...authContext, source: "sort_inbox_apply", from, to });
-      moved.push({ item: itemName, from, to });
-    } catch (err) {
-      logError("tool.sort_inbox.apply.failed", err, { ...authContext, item: itemName, from, to });
-      errors.push({ item: itemName, error: err.message });
-    }
-  }
-
-  logEvent("tool.sort_inbox.applied", { ...authContext, movedCount: moved.length, errorCount: errors.length });
-  return { moved, errors };
-}
+// Sorting is owned exclusively by the OrbitFS Panel sorter service.
+// MCP keeps _sorter only as a protected upload landing folder.
 
 function normalizeRelativePath(input = "") {
   return String(input || "").replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "");
@@ -1929,21 +1766,6 @@ function buildServer(authContext = {}) {
   );
 
   server.tool(
-    "preview_sort_inbox",
-    `Preview where each item sitting in the "${SORT_FOLDER}" staging folder would go if sorted. Does NOT move anything - show this to the user and only call apply_sort_inbox once they've confirmed the destinations (they may want to edit some).`,
-    {},
-    async () => {
-      logEvent("tool.sort_inbox.preview_call", authContext);
-      const { proposals, errors, note } = await planSortInbox(authContext);
-      if (note) return { content: [{ type: "text", text: note }] };
-      const lines = proposals.map((p) => `${p.item} -> ${p.destination}${p.isNewFolder ? " (new folder)" : ""} - ${p.reason}`);
-      if (errors.length) lines.push("", "Could not classify:", ...errors.map((e) => `${e.item}: ${e.error}`));
-      lines.push("", "Nothing has moved yet. Confirm with the user, then call apply_sort_inbox with the item/destination pairs they approve.");
-      return { content: [{ type: "text", text: lines.join("\n") }] };
-    }
-  );
-
-  server.tool(
     "startup_firestorm",
     "Hardcoded Project FireStorm startup command. Equivalent to /startup <project> <low|med|high>. Always loads 0. Core/Master Logs, Mental_health_profiles_core.docx, and Luke's and Laura's Master Profile documents; other Master Profiles stay deferred for /loadfile. Also loads the correct startup files, rules, and bounded project context without making changes.",
     {
@@ -1991,28 +1813,6 @@ function buildServer(authContext = {}) {
     async () => {
       const config = await loadTrashConfig();
       return { content: [{ type: "text", text: JSON.stringify(config, null, 2) }] };
-    }
-  );
-
-  server.tool(
-    "apply_sort_inbox",
-    `Move the confirmed items out of "${SORT_FOLDER}" to the given destinations. Only call this after preview_sort_inbox and explicit user confirmation of each destination - do not guess destinations here.`,
-    {
-      moves: z
-        .array(
-          z.object({
-            item: z.string().describe(`Name of the file/folder inside ${SORT_FOLDER} to move`),
-            destination: z.string().describe("Confirmed destination folder (relative path, no leading/trailing slash)"),
-          })
-        )
-        .describe("Confirmed item -> destination pairs from preview_sort_inbox"),
-    },
-    async ({ moves }) => {
-      logEvent("tool.sort_inbox.apply_call", { ...authContext, count: moves.length });
-      const { moved, errors } = await applySortMoves(moves, authContext);
-      const lines = moved.map((m) => `${m.item} -> ${m.to}`);
-      if (errors.length) lines.push("", "Errors:", ...errors.map((e) => `${e.item}: ${e.error}`));
-      return { content: [{ type: "text", text: lines.join("\n") || "Nothing moved." }] };
     }
   );
 
@@ -2137,14 +1937,6 @@ function buildServer(authContext = {}) {
     `Move a file or folder into "${TRASH_FOLDER}"`,
     { filepath: z.string().describe(`Relative path to move into ${TRASH_FOLDER}`) },
     "move_to_trash"
-  );
-
-  toolPrompt(
-    "sort",
-    `Preview where items in "${SORT_FOLDER}" would be sorted (read-only)`,
-    {},
-    "preview_sort_inbox",
-    "Do not call apply_sort_inbox until I confirm each destination."
   );
 
   toolPrompt(
@@ -2587,28 +2379,6 @@ app.post("/api/oauth-disconnect", express.json(), (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     res.status(400).json({ error: err.message });
-  }
-});
-
-app.post("/api/sort/preview", async (req, res) => {
-  try {
-    const result = await planSortInbox({ ...requestContext(req), source: "rest_api" });
-    logEvent("api.sort.preview.ok", { ...requestContext(req), proposedCount: result.proposals.length, errorCount: result.errors.length });
-    res.json(result);
-  } catch (err) {
-    logError("api.sort.preview.failed", err, requestContext(req));
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/api/sort/apply", async (req, res) => {
-  try {
-    const result = await applySortMoves(req.body?.moves, { ...requestContext(req), source: "rest_api" });
-    logEvent("api.sort.apply.ok", { ...requestContext(req), movedCount: result.moved.length, errorCount: result.errors.length });
-    res.json(result);
-  } catch (err) {
-    logError("api.sort.apply.failed", err, requestContext(req));
-    res.status(500).json({ error: err.message });
   }
 });
 

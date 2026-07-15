@@ -19,6 +19,19 @@ function decodeText(buf) {
 
 export function makeOps(root) {
   const ROOT = path.resolve(root);
+  const PROTECTED_ROOT_FOLDERS = new Set(["_sorter"]);
+
+  function normalizeRelative(rel = "") {
+    return String(rel).replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  }
+
+  function assertMutableRoot(rel, action) {
+    const normalized = normalizeRelative(rel);
+    if (PROTECTED_ROOT_FOLDERS.has(normalized)) {
+      throw new Error(`Cannot ${action} protected root folder "${normalized}"`);
+    }
+    return normalized;
+  }
 
   function safeResolve(rel) {
     const full = path.resolve(ROOT, rel || ".");
@@ -62,6 +75,7 @@ export function makeOps(root) {
   }
 
   async function deleteFile(filepath) {
+    assertMutableRoot(filepath, "delete");
     const full = safeResolve(filepath);
     const st = await fs.stat(full);
     if (st.isDirectory()) {
@@ -72,6 +86,8 @@ export function makeOps(root) {
   }
 
   async function moveFile(from, to) {
+    assertMutableRoot(from, "move");
+    assertMutableRoot(to, "replace");
     const src = safeResolve(from);
     const dest = safeResolve(to);
     await fs.mkdir(path.dirname(dest), { recursive: true });
