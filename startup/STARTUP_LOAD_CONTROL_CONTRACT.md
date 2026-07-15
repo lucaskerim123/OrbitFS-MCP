@@ -2,7 +2,7 @@
 
 ## Authority
 
-The startup command or Startup UI selects the project and load request. There is no default project.
+The Startup UI selects the project and load request. The plain startup command opens the UI only. There is no default project, no default load request, and no file loading before the UI sends an explicit confirmed selection.
 
 ## Projects
 
@@ -29,7 +29,8 @@ MEGA is separate from load strength. It loads the selected project `STARTUP.md`,
   "mega": false,
   "selectedItems": [],
   "taskFiles": [],
-  "includeArchive": false
+  "includeArchive": false,
+  "uiSelectionConfirmed": true
 }
 ```
 
@@ -44,3 +45,5 @@ MEGA is separate from load strength. It loads the selected project `STARTUP.md`,
 - Keep active project and loaded context scoped per MCP client/session.
 - Do not require `file_index.json`.
 - Do not use a stored default project.
+- Do not load any startup files from a plain startup command, model-supplied default, or partial request.
+- Require explicit Startup UI confirmation before reading project, required, preset, selected, task, or MEGA files.

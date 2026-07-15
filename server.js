@@ -10,6 +10,8 @@ const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.HIVE_ROOT;
 const WIDGET_URI = "ui://widget/orbitfs-hive-v6.html";
 const HELP_WIDGET_URI = "ui://widget/orbitfs-help-v1.html";
+const CHATGPT_WIDGET_URI = "ui://widget/orbitfs-chatgpt-ui-v1.html";
+const CHATGPT_HELP_WIDGET_URI = "ui://widget/orbitfs-chatgpt-help-v1.html";
 
 // Widget assembly: each widget is built from a host-agnostic shell (markup/CSS)
 // plus the shared engine logic (core.js) plus one bridge implementation per
@@ -34,7 +36,15 @@ const EXT_APPS_BUNDLE = (
 const BRIDGE_CHATGPT_JS = await fs.readFile(path.join(SERVER_DIR, "app/widget/bridge.chatgpt.js"), "utf8");
 const BRIDGE_CLAUDE_JS = await fs.readFile(path.join(SERVER_DIR, "app/widget/bridge.claude.js"), "utf8");
 
-function assembleWidget(shellHtml, coreJs) {
+function assembleWidget(shellHtml, coreJs, bridgeJs, bridgeHost) {
+  return shellHtml
+    .replace("/*__EXT_APPS_BUNDLE__*/", () => EXT_APPS_BUNDLE)
+    .replace("/*__BRIDGE_CHATGPT__*/", () => bridgeHost === "chatgpt" ? bridgeJs : "")
+    .replace("/*__BRIDGE_CLAUDE__*/", () => bridgeHost === "claude" ? bridgeJs : "")
+    .replace("/*__CORE_JS__*/", () => coreJs);
+}
+
+function assembleLegacyWidget(shellHtml, coreJs) {
   return shellHtml
     .replace("/*__EXT_APPS_BUNDLE__*/", () => EXT_APPS_BUNDLE)
     .replace("/*__BRIDGE_CHATGPT__*/", () => BRIDGE_CHATGPT_JS)
@@ -42,15 +52,33 @@ function assembleWidget(shellHtml, coreJs) {
     .replace("/*__CORE_JS__*/", () => coreJs);
 }
 
+async function loadUiBundle(folder, bridgeHost) {
+  const dir = path.join(SERVER_DIR, "app", folder);
+  const shell = await fs.readFile(path.join(dir, "shell.html"), "utf8");
+  const core = await fs.readFile(path.join(dir, "core.js"), "utf8");
+  const bridge = await fs.readFile(path.join(dir, "bridge.js"), "utf8");
+  const helpShell = await fs.readFile(path.join(dir, "help-shell.html"), "utf8");
+  const helpCoreTemplate = await fs.readFile(path.join(dir, "help-core.js"), "utf8");
+  const commands = JSON.parse(await fs.readFile(path.join(dir, "commands.json"), "utf8"));
+  const helpCore = helpCoreTemplate.replace("__ORBITFS_COMMANDS__", () => JSON.stringify(commands).replace(/</g, "\u003c"));
+  return {
+    widgetHtml: assembleWidget(shell, core, bridge, bridgeHost),
+    helpHtml: assembleWidget(helpShell, helpCore, bridge, bridgeHost),
+    commands,
+  };
+}
+
+const CHATGPT_UI = await loadUiBundle("chatgpt-ui", "chatgpt");
+const COMMAND_HELP = CHATGPT_UI.commands;
+
 const WIDGET_SHELL = await fs.readFile(path.join(SERVER_DIR, "app/widget/shell.html"), "utf8");
 const WIDGET_CORE_JS = await fs.readFile(path.join(SERVER_DIR, "app/widget/core.js"), "utf8");
-const WIDGET_HTML = assembleWidget(WIDGET_SHELL, WIDGET_CORE_JS);
+const WIDGET_HTML = assembleLegacyWidget(WIDGET_SHELL, WIDGET_CORE_JS);
 
-const COMMAND_HELP = JSON.parse(await fs.readFile(path.join(SERVER_DIR, "app/widget/commands.json"), "utf8"));
 const HELP_SHELL = await fs.readFile(path.join(SERVER_DIR, "app/widget/help-shell.html"), "utf8");
 const HELP_CORE_TEMPLATE = await fs.readFile(path.join(SERVER_DIR, "app/widget/help-core.js"), "utf8");
 const HELP_CORE_JS = HELP_CORE_TEMPLATE.replace("__ORBITFS_COMMANDS__", () => JSON.stringify(COMMAND_HELP).replace(/</g, "\u003c"));
-const HELP_WIDGET_HTML = assembleWidget(HELP_SHELL, HELP_CORE_JS);
+const HELP_WIDGET_HTML = assembleLegacyWidget(HELP_SHELL, HELP_CORE_JS);
 
 const CONFIG_PATH = path.join(ROOT, "_system", "Config", "startup-loading.json");
 const originalTool = McpServer.prototype.tool;
@@ -279,17 +307,31 @@ function registerWidget(server) {
     ui: buildClaudeUiMeta(widgetDomain),
     ...buildChatGptMeta("Searchable OrbitFS command reference with usage and short descriptions."),
   };
+  const chatGptWidgetMeta = buildChatGptMeta("The OrbitFS ChatGPT startup chooser, active context manager, file browser and upload controls.");
+  const chatGptHelpMeta = buildChatGptMeta("Searchable OrbitFS ChatGPT command reference with usage and short descriptions.");
   server.registerResource(
     "orbitfs-ui",
     WIDGET_URI,
-    { title: "OrbitFS UI", description: "OrbitFS controls inside ChatGPT and Claude", mimeType: "text/html;profile=mcp-app", _meta: widgetMeta },
+    { title: "OrbitFS UI", description: "Legacy OrbitFS controls for existing clients, including Claude", mimeType: "text/html;profile=mcp-app", _meta: widgetMeta },
     async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: WIDGET_HTML, _meta: widgetMeta }] })
+  );
+  server.registerResource(
+    "orbitfs-chatgpt-ui",
+    CHATGPT_WIDGET_URI,
+    { title: "OrbitFS ChatGPT UI", description: "ChatGPT-specific OrbitFS controls", mimeType: "text/html;profile=mcp-app", _meta: chatGptWidgetMeta },
+    async () => ({ contents: [{ uri: CHATGPT_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: CHATGPT_UI.widgetHtml, _meta: chatGptWidgetMeta }] })
   );
   server.registerResource(
     "orbitfs-help",
     HELP_WIDGET_URI,
     { title: "OrbitFS Command Help", description: "Verified OrbitFS commands", mimeType: "text/html;profile=mcp-app", _meta: helpMeta },
     async () => ({ contents: [{ uri: HELP_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: HELP_WIDGET_HTML, _meta: helpMeta }] })
+  );
+  server.registerResource(
+    "orbitfs-chatgpt-help",
+    CHATGPT_HELP_WIDGET_URI,
+    { title: "OrbitFS ChatGPT Command Help", description: "Verified ChatGPT OrbitFS commands", mimeType: "text/html;profile=mcp-app", _meta: chatGptHelpMeta },
+    async () => ({ contents: [{ uri: CHATGPT_HELP_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: CHATGPT_UI.helpHtml, _meta: chatGptHelpMeta }] })
   );
 }
 
@@ -429,7 +471,7 @@ async function collectMegaFiles() {
 async function runOrbitStartup(authContext, { project, loadstrength, mega = false, selectedFiles = [], taskFiles = [] }) {
   const startupFile = STARTUP_PROJECTS[project];
   if (!startupFile) throw new Error(`Unknown project "${project}". Use 1. Legal or 2. Wellbeing.`);
-  const strength = String(loadstrength || "medium").toLowerCase();
+  const strength = String(loadstrength).toLowerCase();
   if (!["low", "medium", "high", "custom1", "custom2", "custom"].includes(strength)) throw new Error("Use low, medium, high, custom1, custom2, or custom.");
 
   const config = await readConfig();
@@ -529,8 +571,11 @@ ${blocks.join("\n\n")}`
 function registerExtraTools(server, authContext) {
   if (extraToolsRegistered.has(server)) return;
   extraToolsRegistered.add(server);
-  const uiMeta = { ui: { resourceUri: WIDGET_URI }, "openai/outputTemplate": WIDGET_URI };
-  const helpMeta = { ui: { resourceUri: HELP_WIDGET_URI }, "openai/outputTemplate": HELP_WIDGET_URI };
+  const isChatGpt = flowKey(authContext) === "chatgpt";
+  const uiResourceUri = isChatGpt ? CHATGPT_WIDGET_URI : WIDGET_URI;
+  const helpResourceUri = isChatGpt ? CHATGPT_HELP_WIDGET_URI : HELP_WIDGET_URI;
+  const uiMeta = { ui: { resourceUri: uiResourceUri }, "openai/outputTemplate": uiResourceUri };
+  const helpMeta = { ui: { resourceUri: helpResourceUri }, "openai/outputTemplate": helpResourceUri };
 
   server.registerTool("showcp", {
     title: "Open OrbitFS Control Panel",
@@ -730,15 +775,17 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
   if (name !== "startup_firestorm") return originalTool.call(this, name, description, schema, handler);
 
   registerExtraTools(this, this.authContext);
+  const startupResourceUri = flowKey(this.authContext) === "chatgpt" ? CHATGPT_WIDGET_URI : WIDGET_URI;
   return this.registerTool("startup", {
     title: "Start The OrbitFS project",
-    description: "Use for /startup. With no arguments, show the project and load-strength chooser. With project and strength, load real OrbitFS startup context and show what became active.",
+    description: "Use for /startup. With no arguments, show the project and load-strength chooser. Loading is allowed only after the Startup UI sends an explicit confirmed selection.",
     inputSchema: {
       project: z.string().optional().describe("1. Legal or 2. Wellbeing"),
       loadstrength: z.enum(["low", "medium", "high", "custom1", "custom2", "custom"]).optional(),
       mega: z.boolean().optional(),
       selectedFiles: z.array(z.string()).optional(),
       taskFiles: z.array(z.string()).optional(),
+      uiSelectionConfirmed: z.boolean().optional().describe("Internal Startup UI confirmation flag. Required to load files; plain /startup or model-supplied defaults must omit it."),
     },
     outputSchema: {
       mode: z.string(),
@@ -750,14 +797,22 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: {
-      ui: { resourceUri: WIDGET_URI },
-      "openai/outputTemplate": WIDGET_URI,
+      ui: { resourceUri: startupResourceUri },
+      "openai/outputTemplate": startupResourceUri,
       "openai/toolInvocation/invoking": "Loading The OrbitFS project...",
       "openai/toolInvocation/invoked": "The OrbitFS project loaded",
     },
-  }, async ({ project, loadstrength, mega, selectedFiles, taskFiles }) => {
+  }, async ({ project, loadstrength, mega, selectedFiles, taskFiles, uiSelectionConfirmed }) => {
     const config = await readConfig();
     if (!project) return { content: [{ type: "text", text: "Choose a project and load strength in the Startup UI." }], structuredContent: contextStructured(this.authContext, { mode: "chooser", config }) };
+    const requiresConfirmedSelection = flowKey(this.authContext) === "chatgpt";
+    if (requiresConfirmedSelection && !uiSelectionConfirmed) {
+      return {
+        content: [{ type: "text", text: "Choose a project and load strength in the Startup UI before loading files." }],
+        structuredContent: contextStructured(this.authContext, { mode: "chooser", config, rejectedLoad: true }),
+      };
+    }
+    if (requiresConfirmedSelection && !loadstrength) throw new Error("Startup UI selection must include loadstrength.");
     const args = { project, loadstrength: loadstrength || config.defaultStrength || "medium", mega: !!mega, selectedFiles: selectedFiles || [], taskFiles: taskFiles || [] };
     return withDedup(this.authContext, "startup", args, () => runOrbitStartup(this.authContext, args));
   });
