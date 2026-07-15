@@ -8,8 +8,8 @@ import { z } from "zod";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.HIVE_ROOT;
-const WIDGET_URI = "ui://widget/orbitfs-hive-v6.html";
-const HELP_WIDGET_URI = "ui://widget/orbitfs-help-v1.html";
+const WIDGET_URI = "ui://widget/orbitfs-hive-v7.html";
+const HELP_WIDGET_URI = "ui://widget/orbitfs-help-v2.html";
 const CHATGPT_WIDGET_URI = "ui://widget/orbitfs-chatgpt-ui-v2.html";
 const CHATGPT_HELP_WIDGET_URI = "ui://widget/orbitfs-chatgpt-help-v2.html";
 
