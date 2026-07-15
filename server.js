@@ -10,8 +10,8 @@ const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.HIVE_ROOT;
 const WIDGET_URI = "ui://widget/orbitfs-hive-v6.html";
 const HELP_WIDGET_URI = "ui://widget/orbitfs-help-v1.html";
-const CHATGPT_WIDGET_URI = "ui://widget/orbitfs-chatgpt-ui-v1.html";
-const CHATGPT_HELP_WIDGET_URI = "ui://widget/orbitfs-chatgpt-help-v1.html";
+const CHATGPT_WIDGET_URI = "ui://widget/orbitfs-chatgpt-ui-v2.html";
+const CHATGPT_HELP_WIDGET_URI = "ui://widget/orbitfs-chatgpt-help-v2.html";
 
 // Widget assembly: each widget is built from a host-agnostic shell (markup/CSS)
 // plus the shared engine logic (core.js) plus one bridge implementation per
@@ -283,7 +283,6 @@ function buildClaudeUiMeta(widgetDomain) {
   return {
     prefersBorder: true,
     csp: { connectDomains: [widgetDomain], resourceDomains: [widgetDomain] },
-    domain: widgetDomain,
   };
 }
 
@@ -304,11 +303,9 @@ function registerWidget(server) {
   const widgetDomain = getWidgetDomain();
   const widgetMeta = {
     ui: buildClaudeUiMeta(widgetDomain),
-    ...buildChatGptMeta("The OrbitFS startup chooser, active context manager, file browser and upload controls."),
   };
   const helpMeta = {
     ui: buildClaudeUiMeta(widgetDomain),
-    ...buildChatGptMeta("Searchable OrbitFS command reference with usage and short descriptions."),
   };
   const chatGptWidgetMeta = buildChatGptMeta("The OrbitFS ChatGPT startup chooser, active context manager, file browser and upload controls.");
   const chatGptHelpMeta = buildChatGptMeta("Searchable OrbitFS ChatGPT command reference with usage and short descriptions.");
@@ -367,6 +364,13 @@ const STARTUP_PROJECTS = {
   "1. Legal": "1. Legal/STARTUP.md",
   "2. Wellbeing": "2. Wellbeing/STARTUP.md",
 };
+
+function normalizeStartupProject(project = "") {
+  const value = String(project).trim().toLowerCase();
+  if (["1", "legal", "1. legal", "court"].includes(value)) return "1. Legal";
+  if (["2", "wellbeing", "well-being", "2. wellbeing", "mental", "mental health"].includes(value)) return "2. Wellbeing";
+  return String(project).trim();
+}
 
 const STARTUP_SYSTEM_FILES = [
   "_system/Rules/load_order.md",
@@ -472,6 +476,7 @@ async function collectMegaFiles() {
 }
 
 async function runOrbitStartup(authContext, { project, loadstrength, mega = false, selectedFiles = [], taskFiles = [] }) {
+  project = normalizeStartupProject(project);
   const startupFile = STARTUP_PROJECTS[project];
   if (!startupFile) throw new Error(`Unknown project "${project}". Use 1. Legal or 2. Wellbeing.`);
   const strength = String(loadstrength).toLowerCase();
@@ -571,14 +576,63 @@ ${blocks.join("\n\n")}`
   };
 }
 
+const CHATGPT_WIDGET_CALLABLE_TOOLS = new Set([
+  "clear_active_context",
+  "clear_all_context",
+  "delete_journal_draft",
+  "delete_vent_draft",
+  "journal_status",
+  "journalmode",
+  "list_active_context",
+  "list_files",
+  "load_file",
+  "move_item",
+  "move_to_trash",
+  "orbitfs_ui",
+  "preview_file",
+  "reload_journal_draft",
+  "reload_vent_draft",
+  "server_status",
+  "start_journal_recording",
+  "start_vent_recording",
+  "startup",
+  "stop_journal_recording",
+  "stop_vent_recording",
+  "unload_context_files",
+  "upload_journal_entry",
+  "upload_vent_entry",
+  "vent_status",
+  "ventmode",
+]);
+
+function isChatGptWidgetCallable(authContext, name) {
+  return flowKey(authContext) === "chatgpt" && CHATGPT_WIDGET_CALLABLE_TOOLS.has(name);
+}
+
+function widgetCallableDescriptor(name, description, schema) {
+  return {
+    title: name.replace(/_/g, " "),
+    description: typeof description === "string" ? description : undefined,
+    inputSchema: schema || {},
+    _meta: { "openai/widgetAccessible": true },
+  };
+}
+function toolUiMeta(resourceUri, isChatGpt) {
+  const meta = { ui: { resourceUri } };
+  if (isChatGpt) {
+    meta["openai/outputTemplate"] = resourceUri;
+    meta["openai/widgetAccessible"] = true;
+  }
+  return meta;
+}
 function registerExtraTools(server, authContext) {
   if (extraToolsRegistered.has(server)) return;
   extraToolsRegistered.add(server);
   const isChatGpt = flowKey(authContext) === "chatgpt";
   const uiResourceUri = isChatGpt ? CHATGPT_WIDGET_URI : WIDGET_URI;
   const helpResourceUri = isChatGpt ? CHATGPT_HELP_WIDGET_URI : HELP_WIDGET_URI;
-  const uiMeta = { ui: { resourceUri: uiResourceUri }, "openai/outputTemplate": uiResourceUri };
-  const helpMeta = { ui: { resourceUri: helpResourceUri }, "openai/outputTemplate": helpResourceUri };
+  const uiMeta = toolUiMeta(uiResourceUri, isChatGpt);
+  const helpMeta = toolUiMeta(helpResourceUri, isChatGpt);
 
   server.registerTool("showcp", {
     title: "Open OrbitFS Control Panel",
@@ -779,28 +833,38 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
 
   if (name === "load_file") {
     capturedLoadFileHandler = handler;
-    return originalTool.call(this, name, description, schema, async (args) => {
+    const wrappedLoadFile = async (args) => {
       const result = await handler(args);
       const text = (result?.content || []).map((item) => item?.text || "").join("\n");
       trackFile(this.authContext, args.filepath, text.length, "manual", false);
       return result;
-    });
+    };
+    if (isChatGptWidgetCallable(this.authContext, name)) {
+      return this.registerTool(name, widgetCallableDescriptor(name, description, schema), wrappedLoadFile);
+    }
+    return originalTool.call(this, name, description, schema, wrappedLoadFile);
   }
 
-  if (name !== "startup_firestorm") return originalTool.call(this, name, description, schema, handler);
-
-  registerExtraTools(this, this.authContext);
-  const startupResourceUri = flowKey(this.authContext) === "chatgpt" ? CHATGPT_WIDGET_URI : WIDGET_URI;
+  if (name !== "startup_firestorm") {
+    if (isChatGptWidgetCallable(this.authContext, name)) {
+      return this.registerTool(name, widgetCallableDescriptor(name, description, schema), handler);
+    }
+    return originalTool.call(this, name, description, schema, handler);
+  }
+registerExtraTools(this, this.authContext);
+  const isChatGpt = flowKey(this.authContext) === "chatgpt";
+  const startupResourceUri = isChatGpt ? CHATGPT_WIDGET_URI : WIDGET_URI;
+  const startupUiMeta = toolUiMeta(startupResourceUri, isChatGpt);
   return this.registerTool("startup", {
     title: "Start The OrbitFS project",
-    description: "Use for /startup. With no arguments, show the project and load-strength chooser. Loading is allowed only after the Startup UI sends an explicit confirmed selection.",
+    description: "Use for /startup. With no arguments, show the project and load-strength chooser. With project and strength, load real OrbitFS startup context.",
     inputSchema: {
       project: z.string().optional().describe("1. Legal or 2. Wellbeing"),
       loadstrength: z.enum(["low", "medium", "high", "custom1", "custom2", "custom"]).optional(),
       mega: z.boolean().optional(),
       selectedFiles: z.array(z.string()).optional(),
       taskFiles: z.array(z.string()).optional(),
-      uiSelectionConfirmed: z.boolean().optional().describe("Internal Startup UI confirmation flag. Required to load files; plain /startup or model-supplied defaults must omit it."),
+      uiSelectionConfirmed: z.boolean().optional().describe("Internal Startup UI compatibility flag."),
     },
     outputSchema: {
       mode: z.string(),
@@ -812,23 +876,14 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: {
-      ui: { resourceUri: startupResourceUri },
-      "openai/outputTemplate": startupResourceUri,
+      ...startupUiMeta,
       "openai/toolInvocation/invoking": "Loading The OrbitFS project...",
       "openai/toolInvocation/invoked": "The OrbitFS project loaded",
     },
   }, async ({ project, loadstrength, mega, selectedFiles, taskFiles, uiSelectionConfirmed }) => {
     const config = await readConfig();
-    if (!project) return { content: [{ type: "text", text: "Choose a project and load strength in the Startup UI." }], structuredContent: contextStructured(this.authContext, { mode: "chooser" }), _meta: { ui: { resourceUri: startupResourceUri }, "openai/outputTemplate": startupResourceUri, config } };
-    const requiresConfirmedSelection = flowKey(this.authContext) === "chatgpt";
-    if (requiresConfirmedSelection && !uiSelectionConfirmed) {
-      return {
-        content: [{ type: "text", text: "Choose a project and load strength in the Startup UI before loading files." }],
-        structuredContent: contextStructured(this.authContext, { mode: "chooser", rejectedLoad: true }),
-        _meta: { ui: { resourceUri: startupResourceUri }, "openai/outputTemplate": startupResourceUri, config },
-      };
-    }
-    if (requiresConfirmedSelection && !loadstrength) throw new Error("Startup UI selection must include loadstrength.");
+    if (!project) return { content: [{ type: "text", text: "Choose a project and load strength in the Startup UI." }], structuredContent: contextStructured(this.authContext, { mode: "chooser" }), _meta: { ...startupUiMeta, config } };
+    if (flowKey(this.authContext) === "chatgpt" && uiSelectionConfirmed && !loadstrength) throw new Error("Startup UI selection must include loadstrength.");
     const args = { project, loadstrength: loadstrength || config.defaultStrength || "medium", mega: !!mega, selectedFiles: selectedFiles || [], taskFiles: taskFiles || [] };
     return withDedup(this.authContext, "startup", args, () => runOrbitStartup(this.authContext, args));
   });
