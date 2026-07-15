@@ -1844,13 +1844,13 @@ function buildServer(authContext = {}) {
 
   toolPrompt(
     "startup",
-    "Open the OrbitFS startup chooser or load a selected project preset",
+    "Open the OrbitFS startup chooser",
     {
-      project: z.string().optional().describe("1. Legal or 2. Wellbeing; omit to open the chooser"),
-      loadstrength: z.enum(["low", "medium", "high", "custom1", "custom2"]).optional().describe("Preset strength; defaults to configured medium"),
+      project: z.string().optional().describe("Deprecated. Do not use for loading; select project in the Startup UI."),
+      loadstrength: z.enum(["low", "medium", "high", "custom1", "custom2"]).optional().describe("Deprecated. Do not use for loading; select strength in the Startup UI."),
     },
     "startup",
-    "With no project, call startup with no arguments to open the chooser. Otherwise use the supplied project and loadstrength."
+    "Call startup with no arguments to open the chooser. Do not load files until the Startup UI sends a confirmed selection."
   );
 
   toolPrompt(
@@ -2430,11 +2430,18 @@ app.post("/api/trash/config", async (req, res) => {
 
 app.post("/api/startup", async (req, res) => {
   try {
-    const text = await buildFirestormStartup(req.body?.project || "Master", req.body?.load_level || "med", {
+    if (!req.body?.uiSelectionConfirmed) {
+      logEvent("api.startup.rejected_unconfirmed", { ...requestContext(req), project: req.body?.project, load: req.body?.load_level });
+      return res.status(409).json({ error: "Choose a project and load strength in the Startup UI before loading files." });
+    }
+    if (!req.body?.project || !req.body?.load_level) {
+      return res.status(400).json({ error: "Startup UI selection must include project and load_level." });
+    }
+    const text = await buildFirestormStartup(req.body.project, req.body.load_level, {
       ...requestContext(req),
       source: "rest_api",
     });
-    logEvent("api.startup.ok", { ...requestContext(req), project: req.body?.project || "Master", load: req.body?.load_level || "med" });
+    logEvent("api.startup.ok", { ...requestContext(req), project: req.body.project, load: req.body.load_level });
     res.json({ text });
   } catch (err) {
     logError("api.startup.failed", err, { ...requestContext(req), project: req.body?.project, load: req.body?.load_level });
@@ -2470,7 +2477,5 @@ serverHandle = app.listen(PORT, async () => {
   }, TRASH_PURGE_INTERVAL_MS).unref();
   logEvent("server.start", { port: PORT, root: ROOT, publicBaseUrl: PUBLIC_BASE_URL });
 });
-
-
 
 
