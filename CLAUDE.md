@@ -23,6 +23,12 @@ two prod servers against the same HIVE_ROOT, don't commit `.env`/tokens/logs).
   headless Node child, so restarts can race a still-dying process. If a restart
   fails, check for a lingering `node server.js` (or a shell/watcher sitting in
   the dir) before retrying.
+  Reliable restart recipe: `Stop-Service -Force` → kill any leftover
+  `node.exe` whose CommandLine matches `server.js` (exclude Panel) → confirm
+  zero via `Get-CimInstance Win32_Process` → `Start-Service` → verify with
+  `Get-NetTCPConnection -LocalPort <port>` (or `netstat -ano | grep LISTENING`),
+  not `Get-Service` status alone — status can say "Running" while a stale
+  process still squats the port or a fresh one hasn't bound yet.
 - Boot policy: only **OrbitFSPanel** + **OrbitFSTunnel** auto-start. The MCP
   server and sorter are Manual — started on demand from the panel's System tab.
 - The cloudflared tunnel is **remote-managed** (routes live in the Cloudflare
@@ -65,6 +71,26 @@ Bare `powershell`/`powershell.exe` is not reliable here — invoke via full path
 `/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command "..."`.
 Never use PowerShell redirect syntax (`*>`) inside a bash command — bash
 glob-expands the `*`. Use `2>/dev/null` / `| Out-Null` inside the PS string.
+`Get-CimInstance -Filter` chokes on combined `LIKE ... AND ... NOTLIKE ...`
+("Invalid query"). Fetch broadly and filter with `Where-Object` in the
+pipeline instead.
+
+## Claude widget bridge (app/widget/)
+
+Widget assembled at server startup from `shell.html` (markup/CSS) +
+`core.js` (host-agnostic UI logic) + `bridge.chatgpt.js` / `bridge.claude.js`
+(per-host `window.OrbitFSBridge` implementation) + the inlined
+`@modelcontextprotocol/ext-apps` bundle — see `assembleWidget()` in
+`server.js`. Editing `app/widget/index.html` directly does nothing; it no
+longer exists.
+
+**Gotcha:** `app.callServerTool()` (widget → server) is silent — the model
+never sees the result. Tool responses meant to be read by the model use
+`[INTERNAL ...]` / `[ORBITFS CONTEXT UPDATE]` framing text (grep for it);
+any tool using that framing must also be in `bridge.claude.js`'s
+`CONTEXT_SYNC_TOOLS` set, which forwards the result via
+`app.updateModelContext()`. Forgetting this makes a button look like it
+works (widget UI updates) while the model stays completely unaware.
 
 ## Auth model
 
