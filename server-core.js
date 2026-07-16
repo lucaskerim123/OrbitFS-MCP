@@ -2057,12 +2057,12 @@ async function checkAuth(req) {
 // api_key bypass (HIVE_API_KEY) is always "owner" - it's a privileged
 // credential only the admin holds, same as before this existed. A JWT/CF
 // Access email either belongs to a system admin (owner, unrestricted, same
-// as legacy behavior) or has an active grant (guest, scoped to one
+// as legacy behavior) or has an active grant (member, scoped to one
 // workspace) or neither (denied - see the 403 above). If PANEL_INTERNAL_KEY
 // isn't configured at all, everyone stays "owner" so a fresh install or a
 // panel-less test setup keeps working exactly as before this feature. If it
 // IS configured but the lookup fails (panel down, network blip), fail
-// closed rather than risk handing a guest full/owner access.
+// closed rather than risk handing a member full/owner access.
 const PANEL_INTERNAL_URL = process.env.PANEL_INTERNAL_URL || "http://127.0.0.1:4000";
 const MCP_INTERNAL_KEY = process.env.MCP_INTERNAL_KEY || "";
 const IDENTITY_CACHE_TTL_MS = 60_000;
@@ -2082,7 +2082,7 @@ async function resolveMcpRole(authContext) {
     });
     if (!resp.ok) throw new Error(`identity lookup returned ${resp.status}`);
     const identity = await resp.json();
-    const fields = identity.role === "guest" && !identity.workspaceRoot
+    const fields = identity.role === "member" && !identity.workspaceRoot
       ? { mcpRole: null }
       : { mcpRole: identity.role || null, workspaceId: identity.workspaceId || null, workspaceRoot: identity.workspaceRoot || null, workspaceName: identity.workspaceName || null };
     identityCache.set(email, { fields, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS });
