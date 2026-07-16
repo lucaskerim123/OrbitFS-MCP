@@ -676,10 +676,11 @@ function registerExtraTools(server, authContext) {
     hiveUiState.open = true;
     hiveUiState.focused = true;
     hiveUiState.modal = null;
+    const publicSnapshot = hiveUiPublicSnapshot(authContext, { mode: "ui", view: next });
     return {
       content: [{ type: "text", text: "OrbitFS control panel opened." }],
-      structuredContent: hiveUiSnapshot(authContext, { mode: "ui", view: next }),
-      _meta: uiMeta,
+      structuredContent: publicSnapshot,
+      _meta: { ...uiMeta, orbitfsState: hiveUiSnapshot(authContext, { mode: "ui", view: next }) },
     };
   });
 
@@ -737,7 +738,8 @@ function registerExtraTools(server, authContext) {
     if (target) hiveUiState.selectedFiles = [target];
     if (options) hiveUiState.filters = { ...hiveUiState.filters, ...options };
     const text = action === "status" ? `OrbitFS UI: ${hiveUiState.open ? "open" : "closed"}; screen=${hiveUiState.currentScreen}; modal=${hiveUiState.modal || "none"}; history=${hiveUiState.history.length}` : `OrbitFS UI ${action}: ${screen || modal || hiveUiState.currentScreen}`;
-    return { content: [{ type: "text", text }], structuredContent: hiveUiSnapshot(authContext, { action, target: target || null }), _meta: uiMeta };
+    const publicSnapshot = hiveUiPublicSnapshot(authContext, { action, target: target || null });
+    return { content: [{ type: "text", text }], structuredContent: publicSnapshot, _meta: { ...uiMeta, orbitfsState: hiveUiSnapshot(authContext, { action, target: target || null }) } };
   });
 
   server.registerTool("show_orbitfs_ui", {
@@ -754,10 +756,11 @@ function registerExtraTools(server, authContext) {
     hiveUiState.open = true;
     hiveUiState.focused = true;
     hiveUiState.modal = null;
+    const publicSnapshot = hiveUiPublicSnapshot(authContext, { mode: "chooser", view: next });
     return {
       content: [{ type: "text", text: "The OrbitFS UI is open." }],
-      structuredContent: hiveUiSnapshot(authContext, { mode: "chooser", view: next }),
-      _meta: { ...uiMeta, config },
+      structuredContent: publicSnapshot,
+      _meta: { ...uiMeta, config, orbitfsState: hiveUiSnapshot(authContext, { mode: "chooser", view: next }) },
     };
   });
 

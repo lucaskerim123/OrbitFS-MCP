@@ -19,6 +19,13 @@ if (!window.OrbitFSBridge) {
 
 document.documentElement.classList.toggle("claude-host", OrbitFSBridge.hostName !== "chatgpt");
 
+const PANEL_CLAIM_KEY="orbitfs.chatgpt.activePanel";
+const PANEL_INSTANCE_ID=`${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function hideStalePanel(){const shell=document.querySelector('.shell');if(shell)shell.classList.add('hidden');if(window.closedNote){closedNote.textContent='OrbitFS UI moved to the newest panel.';closedNote.classList.add('show')}}
+function claimActivePanel(){try{localStorage.setItem(PANEL_CLAIM_KEY,PANEL_INSTANCE_ID)}catch{}}
+window.addEventListener('storage',e=>{if(e.key===PANEL_CLAIM_KEY&&e.newValue&&e.newValue!==PANEL_INSTANCE_ID)hideStalePanel()});
+claimActivePanel();
+
 let currentPath='',currentEntries=[],contextPath='',contextEntries=[],selectedProject='',selectedStrength='medium';
 function callTool(name,args={}){return OrbitFSBridge.callTool(name,args)}
 function textFrom(r){return(r?.content||[]).map(x=>x.text||'').join('\n')}
