@@ -261,13 +261,12 @@ function trackFile(authContext, filepath, characters, source = "manual", truncat
   const activeContext = getActiveContext(authContext);
   const key = normalize(filepath);
   const now = Date.now();
-  const existingPinned = activeContext.get(key)?.pinned || false;
   activeContext.set(key, {
     path: key,
     characters: Number(characters || 0),
     source,
     truncated: !!truncated,
-    pinned: !!pinned || existingPinned,
+    pinned: !!pinned,
     loadedAt: new Date(now).toISOString(),
     lastAccessedAt: new Date(now).toISOString(),
     expiresAt: null,
@@ -530,7 +529,7 @@ async function runOrbitStartup(authContext, { project, loadstrength, mega = fals
     try {
       const content = await readableStartupText(filepath);
       loaded.push({ filepath, content, characters: content.length, truncated: false, mandatory: true });
-      trackFile(authContext, filepath, content.length, "startup-required", false, true);
+      trackFile(authContext, filepath, content.length, "startup-default", false, false);
     } catch (error) {
       failed.push({ filepath, error: error.message, mandatory: true });
     }
@@ -787,46 +786,40 @@ function registerExtraTools(server, authContext) {
   }, async ({ filepath }) => {
     const activeContext = getActiveContext(authContext);
     const key = normalize(filepath);
-    const current = activeContext.get(key);
-    if (current?.pinned) throw new Error(`${key} is pinned startup-required context and cannot be unloaded individually.`);
     activeContext.delete(key);
     return { content: [{ type: "text", text: `[ORBITFS CONTEXT UPDATE] ${key} is unloaded and must no longer be treated as active OrbitFS context.` }], structuredContent: contextStructured(authContext) };
   });
 
   server.registerTool("unload_context_files", {
     title: "Unload multiple OrbitFS context files",
-    description: "Remove several files from the authoritative active OrbitFS context set in one call. Pinned startup-required files are skipped, not errored.",
+    description: "Remove several files from the authoritative active OrbitFS context set in one call.",
     inputSchema: { filepaths: z.array(z.string()).min(1) },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: uiMeta,
   }, async ({ filepaths }) => {
     const activeContext = getActiveContext(authContext);
     const unloaded = [];
-    const skipped = [];
     for (const filepath of filepaths) {
       const key = normalize(filepath);
-      const current = activeContext.get(key);
-      if (current?.pinned) { skipped.push(key); continue; }
       activeContext.delete(key);
       unloaded.push(key);
     }
-    const lines = [];
-    if (unloaded.length) lines.push(`[ORBITFS CONTEXT UPDATE] ${unloaded.join(", ")} unloaded and must no longer be treated as active OrbitFS context.`);
-    if (skipped.length) lines.push(`Skipped (pinned startup-required, cannot unload individually): ${skipped.join(", ")}`);
-    if (!lines.length) lines.push("No files were unloaded.");
-    return { content: [{ type: "text", text: lines.join("\n") }], structuredContent: contextStructured(authContext, { unloaded, skipped }) };
+    const text = unloaded.length
+      ? `[ORBITFS CONTEXT UPDATE] ${unloaded.join(", ")} unloaded and must no longer be treated as active OrbitFS context.`
+      : "No files were unloaded.";
+    return { content: [{ type: "text", text }], structuredContent: contextStructured(authContext, { unloaded }) };
   });
 
   server.registerTool("clear_active_context", {
     title: "Clear active OrbitFS context",
-    description: "Unload every unpinned file from the authoritative active OrbitFS context set.",
+    description: "Unload every file from the authoritative active OrbitFS context set.",
     inputSchema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: uiMeta,
   }, async () => {
     const activeContext = getActiveContext(authContext);
-    for (const [key, file] of activeContext) if (!file.pinned) activeContext.delete(key);
-    return { content: [{ type: "text", text: "[ORBITFS CONTEXT UPDATE] Unpinned OrbitFS files are no longer active." }], structuredContent: contextStructured(authContext) };
+    activeContext.clear();
+    return { content: [{ type: "text", text: "[ORBITFS CONTEXT UPDATE] All OrbitFS files are no longer active." }], structuredContent: contextStructured(authContext) };
   });
 
   server.registerTool("clear_all_context", {
