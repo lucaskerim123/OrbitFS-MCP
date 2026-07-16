@@ -16,10 +16,12 @@ import { makeOps } from "./hive-ops.js";
 import archiver from "archiver";
 import mammoth from "mammoth";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
+import { COMPONENTS, activateComponents, assertComponentLicensed, getLicenseSummary, licenseGuard, startLicenseHeartbeat } from "./license.js";
 
 const ROOT = process.env.HIVE_ROOT;
 const API_KEY = process.env.HIVE_API_KEY;
 const PORT = process.env.PORT || 3939;
+startLicenseHeartbeat();
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL;
 const SECRET_KEY = new TextEncoder().encode(process.env.SESSION_SECRET);
 const SORT_FOLDER = "_sorter";
@@ -2026,6 +2028,14 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+app.get("/api/license/status", async (_req, res) => {
+  try {
+    res.json(await getLicenseSummary());
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message, code: error.code });
+  }
+});
+
 async function checkAuth(req) {
   const auth = req.headers["authorization"];
   if (!auth || !auth.startsWith("Bearer ")) {
@@ -2155,16 +2165,31 @@ const MCP_DENY_MESSAGES = {
   identity_unreachable: "Could not reach the OrbitFS panel to verify access. Try again shortly; if this persists, check PANEL_INTERNAL_URL.",
   identity_unauthorized: "The MCP server and panel are misconfigured (internal key mismatch). Ask the admin to check MCP_INTERNAL_KEY matches in both .env files.",
   identity_error: "The OrbitFS panel returned an error while verifying access. Try again shortly.",
+  license_required: "The OrbitFS MCP or Workspaces licence is blocked or not activated.",
   no_account: "No OrbitFS account found for this email. If you're the admin, check your panel account's email (Account tab) matches this login exactly.",
   no_grant: "This account has no MCP access. Ask a workspace owner to grant it.",
 };
 
+app.use("/mcp", licenseGuard(COMPONENTS.MCP));
 app.post("/mcp", async (req, res) => {
   const authContext = await resolveMcpRole(req.authContext || {});
   if (!authContext.mcpRole) {
     const reason = authContext.denyReason || "unknown";
     logEvent("mcp.request.denied", { ...requestContext(req), reason });
     return res.status(403).json({ error: MCP_DENY_MESSAGES[reason] || "This account has no MCP access.", reason });
+  }
+  if (authContext.mcpRole === "member") {
+    try {
+      await assertComponentLicensed(COMPONENTS.WORKSPACES);
+    } catch (error) {
+      logEvent("mcp.request.denied", { ...requestContext(req), reason: "license_required", component: COMPONENTS.WORKSPACES });
+      return res.status(error.status || 403).json({
+        error: error.message,
+        reason: "license_required",
+        code: error.code || "LICENSE_REQUIRED",
+        license: error.license || null,
+      });
+    }
   }
   logEvent("mcp.request.start", { ...requestContext(req), ...summarizeMcpBody(req.body), mcpRole: authContext.mcpRole });
   const server = buildServer(authContext);
@@ -2188,14 +2213,34 @@ app.post("/mcp", async (req, res) => {
 // directly (upload/download need raw bytes, which doesn't map cleanly onto
 // MCP tool calls over JSON-RPC).
 
-app.get("/api/ping", (req, res) => res.json({ ok: true, name: "orbitfs" }));
+app.get("/api/ping", async (_req, res) => {
+  const license = await getLicenseSummary();
+  res.json({ ok: true, name: "orbitfs", license: { valid: license.valid, enforcement: license.enforcement, reason: license.reason || null } });
+});
+
+app.post("/api/license/activate", async (req, res) => {
+  try {
+    const ok = await checkAuth(req);
+    if (!ok) return res.status(401).json({ error: "Unauthorized" });
+    const components = Array.isArray(req.body?.components) ? req.body.components : [COMPONENTS.MCP];
+    const license = await activateComponents(req.body?.licenseKey, components);
+    res.json({ ok: true, license });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message, code: error.code, license: error.license || null });
+  }
+});
 
 app.use("/api", async (req, res, next) => {
-  if (req.path === "/ping") return next();
+  if (req.path === "/ping" || req.path === "/license/status" || req.path === "/license/activate") return next();
   if (req.path === "/upload" && req.query.token) return next();
   const ok = await checkAuth(req);
   if (!ok) return res.status(401).json({ error: "Unauthorized" });
   next();
+});
+
+app.use("/api", (req, res, next) => {
+  if (req.path === "/ping" || req.path === "/license/status" || req.path === "/license/activate") return next();
+  return licenseGuard(COMPONENTS.MCP)(req, res, next);
 });
 
 app.get("/api/manifest", async (req, res) => {
