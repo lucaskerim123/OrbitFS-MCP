@@ -981,8 +981,7 @@ function clipStartupText(text, cap, source) {
 }
 
 function isStartupReadableFile(filepath) {
-  const ext = path.extname(filepath).toLowerCase();
-  return STARTUP_TEXT_EXTENSIONS.has(ext) || ext === ".docx";
+  return !!normalizeRelativePath(filepath);
 }
 
 function isMandatoryStartupFile(filepath) {
@@ -1004,9 +1003,21 @@ function shouldDeferStartupFile(filepath) {
 }
 
 async function readStartupFile(filepath) {
-  if (path.extname(filepath).toLowerCase() !== ".docx") return ops.readFile(filepath);
-  const result = await mammoth.extractRawText({ path: ops.safeResolve(filepath) });
-  return result.value;
+  const ext = path.extname(filepath).toLowerCase();
+  if (ext === ".docx") {
+    const result = await mammoth.extractRawText({ path: ops.safeResolve(filepath) });
+    return result.value;
+  }
+  if (ext === ".pdf") {
+    const result = await pdfParse(await fs.readFile(ops.safeResolve(filepath)));
+    const text = result.text || "";
+    if (text.trim().length > 20) return text;
+    const stat = await fs.stat(ops.safeResolve(filepath));
+    return `[PDF FILE REFERENCE]\nPath: ${filepath}\nPages: ${result.numpages || "unknown"}\nSize: ${stat.size} bytes\nPDF text extraction returned little or no readable text. It may be scanned or image-based.`;
+  }
+  if (STARTUP_TEXT_EXTENSIONS.has(ext)) return ops.readFile(filepath);
+  const stat = await fs.stat(ops.safeResolve(filepath));
+  return `[FILE REFERENCE]\nPath: ${filepath}\nType: ${ext.slice(1).toUpperCase() || "UNKNOWN"}\nSize: ${stat.size} bytes\nReadable text was not extracted automatically. Use view_file/open_file_web/download link or a specialist extractor for this file type.`;
 }
 
 async function extractViewableFile(filepath) {

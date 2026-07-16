@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import mammoth from "mammoth";
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -37,8 +38,11 @@ const BRIDGE_CHATGPT_JS = await fs.readFile(path.join(SERVER_DIR, "app/widget/br
 const BRIDGE_CLAUDE_JS = await fs.readFile(path.join(SERVER_DIR, "app/widget/bridge.claude.js"), "utf8");
 
 function assembleWidget(shellHtml, coreJs, bridgeJs, bridgeHost) {
+  // ExtApps (~330KB) is only needed by bridge.claude.js (globalThis.ExtApps.App).
+  // bridge.chatgpt.js talks to window.openai only, so skip inlining it there -
+  // it was dead weight bloating the ChatGPT widget for no reason.
   return shellHtml
-    .replace("/*__EXT_APPS_BUNDLE__*/", () => EXT_APPS_BUNDLE)
+    .replace("/*__EXT_APPS_BUNDLE__*/", () => bridgeHost === "claude" ? EXT_APPS_BUNDLE : "")
     .replace("/*__BRIDGE_CHATGPT__*/", () => bridgeHost === "chatgpt" ? bridgeJs : "")
     .replace("/*__BRIDGE_CLAUDE__*/", () => bridgeHost === "claude" ? bridgeJs : "")
     .replace("/*__CORE_JS__*/", () => coreJs);
@@ -415,16 +419,25 @@ async function resolveStartupPath(filepath) {
   return normalize(path.posix.join(folder, match.name));
 }
 
+const STARTUP_TEXT_EXTENSIONS = /\.(md|txt|json|jsonl|csv|yml|yaml|xml|html|js|mjs|cjs|ts|tsx|jsx|css|py|ps1|sh|sql|log|ini|cfg|conf)$/i;
+
 async function readableStartupText(filepath) {
   const rel = normalize(filepath);
   if (!rel || rel.includes("..") || /^[a-z]:/i.test(rel)) throw new Error(`Invalid OrbitFS-relative path: ${filepath}`);
   if (archivePath(rel)) throw new Error(`Archive is excluded: ${rel}`);
   const absolute = path.join(ROOT, ...rel.split("/"));
   if (/\.docx$/i.test(rel)) return (await mammoth.extractRawText({ path: absolute })).value;
-  return fs.readFile(absolute, "utf8");
+  if (/\.pdf$/i.test(rel)) {
+    const result = await pdfParse(await fs.readFile(absolute));
+    const text = result.text || "";
+    if (text.trim().length > 20) return text;
+    const stat = await fs.stat(absolute);
+    return `[PDF FILE REFERENCE]\nPath: ${rel}\nPages: ${result.numpages || "unknown"}\nSize: ${stat.size} bytes\nPDF text extraction returned little or no readable text. It may be scanned or image-based.`;
+  }
+  if (STARTUP_TEXT_EXTENSIONS.test(rel)) return fs.readFile(absolute, "utf8");
+  const stat = await fs.stat(absolute);
+  return `[FILE REFERENCE]\nPath: ${rel}\nType: ${path.extname(rel).slice(1).toUpperCase() || "UNKNOWN"}\nSize: ${stat.size} bytes\nReadable text was not extracted automatically. Use view_file/open_file_web/download link or a specialist extractor for this file type.`;
 }
-
-const STARTUP_READABLE_EXTENSIONS = /\.(md|txt|json|jsonl|csv|yml|yaml|xml|html|js|mjs|cjs|ts|tsx|jsx|css|py|ps1|sh|sql|log|ini|cfg|conf|docx)$/i;
 
 async function expandStartupSelections(selections = []) {
   const files = [];
@@ -436,7 +449,7 @@ async function expandStartupSelections(selections = []) {
       if (excludedStartupPath(childRel)) continue;
       const childAbs = path.join(abs, entry.name);
       if (entry.isDirectory()) await walk(childAbs, childRel);
-      else if (STARTUP_READABLE_EXTENSIONS.test(entry.name)) files.push(childRel);
+      else if (entry.isFile()) files.push(childRel);
     }
   }
   for (const requested of selections.map(normalize).filter(Boolean)) {
@@ -450,7 +463,6 @@ async function expandStartupSelections(selections = []) {
       await walk(absolute, requested);
       expandedFolders.push({ folder: requested, fileCount: files.length - before });
     } else if (stat.isFile()) {
-      if (!STARTUP_READABLE_EXTENSIONS.test(requested)) throw new Error(`Unsupported startup file type: ${requested}`);
       files.push(requested);
     }
   }
@@ -468,7 +480,7 @@ async function collectMegaFiles() {
       if (excludedStartupPath(childRel)) continue;
       const childAbs = path.join(abs, entry.name);
       if (entry.isDirectory()) await walk(childAbs, childRel);
-      else if (STARTUP_READABLE_EXTENSIONS.test(entry.name)) files.push(childRel);
+      else if (entry.isFile()) files.push(childRel);
     }
   }
   for (const root of roots) await walk(path.join(ROOT, root), root);
