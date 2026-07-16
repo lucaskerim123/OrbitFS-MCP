@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --check server.js && node --check server-core.js"
+    "test": "node --check server.js && node --check server-core.js && node --check license.js && node test-license.mjs"
   },
   "keywords": [
     "chatgpt-app",
