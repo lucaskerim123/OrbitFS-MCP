@@ -163,6 +163,23 @@ function hiveUiSnapshot(authContext, extra = {}) {
   };
 }
 
+function hiveUiPublicSnapshot(authContext, extra = {}) {
+  const hiveUiState = getHiveUiState(authContext);
+  return {
+    mode: extra.mode || "ui_controller",
+    view: extra.view || hiveUiState.currentScreen,
+    action: extra.action || null,
+    target: extra.target || null,
+    ui: {
+      currentScreen: hiveUiState.currentScreen,
+      open: hiveUiState.open,
+      focused: hiveUiState.focused,
+      modal: hiveUiState.modal,
+      revision: hiveUiState.revision,
+    },
+  };
+}
+
 const DEFAULT_CONFIG = {
   defaultStrength: "medium",
   excludeFolders: ["_trash", "archive", "archives", "2. Wellbeing/Pure Vent Mode"],
@@ -746,11 +763,17 @@ function registerExtraTools(server, authContext) {
 
   server.registerTool("list_active_context", {
     title: "List active OrbitFS context",
-    description: "List files currently marked active for this OrbitFS ChatGPT session.",
+    description: "List files currently marked active for this OrbitFS ChatGPT session without reloading file contents.",
     inputSchema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     _meta: uiMeta,
-  }, async () => replayActiveContext(authContext));
+  }, async () => {
+    const structuredContent = contextStructured(authContext);
+    return {
+      content: [{ type: "text", text: `${structuredContent.activeFileCount} active OrbitFS file${structuredContent.activeFileCount === 1 ? "" : "s"}.` }],
+      structuredContent,
+    };
+  });
 
   server.registerTool("unload_context_file", {
     title: "Unload OrbitFS context file",
