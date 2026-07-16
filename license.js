@@ -257,22 +257,7 @@ export async function getLicenseSummary({ refresh = false } = {}) {
   const cache = await readJson(cachePath());
   if (!refresh && fresh(cache)) return { ...cache, enforcement: true };
   try {
-    let result = await callProvider({ licenseKey, components: ALL_COMPONENTS, activate: false });
-    const newlyEnabled = ALL_COMPONENTS.filter((component) => {
-      const previous = cache?.components?.[component];
-      const current = result.components?.[component];
-      return previous?.state === "blocked" && current?.state === "active"
-        && current?.allowed === true && current?.lockedToThisInstallation !== true;
-    });
-    if (newlyEnabled.length) {
-      const activated = await callProvider({ licenseKey, components: newlyEnabled, activate: true });
-      result = {
-        ...result,
-        valid: activated.valid,
-        reason: activated.reason,
-        components: { ...result.components, ...activated.components },
-      };
-    }
+    const result = await callProvider({ licenseKey, components: ALL_COMPONENTS, activate: false });
     return await persist(result, "refresh", licenseKey);
   } catch (error) {
     if (withinGrace(cache)) return { ...cache, enforcement: true, offlineGrace: true, refreshError: error.message };
