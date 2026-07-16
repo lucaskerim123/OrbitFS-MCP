@@ -2052,6 +2052,47 @@ async function checkAuth(req) {
   }
 }
 
+// Resolves an authenticated connection to an MCP role by asking the panel
+// (source of truth for grants) which email maps to which workspace. The
+// api_key bypass (HIVE_API_KEY) is always "owner" - it's a privileged
+// credential only the admin holds, same as before this existed. A JWT/CF
+// Access email either belongs to a system admin (owner, unrestricted, same
+// as legacy behavior) or has an active grant (guest, scoped to one
+// workspace) or neither (denied - see the 403 above). If PANEL_INTERNAL_KEY
+// isn't configured at all, everyone stays "owner" so a fresh install or a
+// panel-less test setup keeps working exactly as before this feature. If it
+// IS configured but the lookup fails (panel down, network blip), fail
+// closed rather than risk handing a guest full/owner access.
+const PANEL_INTERNAL_URL = process.env.PANEL_INTERNAL_URL || "http://127.0.0.1:4000";
+const MCP_INTERNAL_KEY = process.env.MCP_INTERNAL_KEY || "";
+const IDENTITY_CACHE_TTL_MS = 60_000;
+const identityCache = new Map();
+
+async function resolveMcpRole(authContext) {
+  if (authContext.type === "api_key") return { ...authContext, mcpRole: "owner" };
+  const email = String(authContext.email || "").trim().toLowerCase();
+  if (!email) return { ...authContext, mcpRole: null };
+  if (!MCP_INTERNAL_KEY) return { ...authContext, mcpRole: "owner" };
+  const cached = identityCache.get(email);
+  if (cached && cached.expiresAt > Date.now()) return { ...authContext, ...cached.fields };
+  try {
+    const resp = await fetch(`${PANEL_INTERNAL_URL}/internal/mcp-identity?email=${encodeURIComponent(email)}`, {
+      headers: { "X-Internal-Key": MCP_INTERNAL_KEY },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!resp.ok) throw new Error(`identity lookup returned ${resp.status}`);
+    const identity = await resp.json();
+    const fields = identity.role === "guest" && !identity.workspaceRoot
+      ? { mcpRole: null }
+      : { mcpRole: identity.role || null, workspaceId: identity.workspaceId || null, workspaceRoot: identity.workspaceRoot || null, workspaceName: identity.workspaceName || null };
+    identityCache.set(email, { fields, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS });
+    return { ...authContext, ...fields };
+  } catch (err) {
+    logError("mcp.identity.lookup_failed", err, { email });
+    return { ...authContext, mcpRole: null };
+  }
+}
+
 app.use("/mcp", async (req, res, next) => {
   const ok = await checkAuth(req);
   if (!ok) {
@@ -2065,8 +2106,13 @@ app.use("/mcp", async (req, res, next) => {
 });
 
 app.post("/mcp", async (req, res) => {
-  logEvent("mcp.request.start", { ...requestContext(req), ...summarizeMcpBody(req.body) });
-  const server = buildServer(req.authContext || {});
+  const authContext = await resolveMcpRole(req.authContext || {});
+  if (!authContext.mcpRole) {
+    logEvent("mcp.request.denied", { ...requestContext(req), reason: "no_mcp_role" });
+    return res.status(403).json({ error: "This account has no MCP access. Ask a workspace owner to grant it." });
+  }
+  logEvent("mcp.request.start", { ...requestContext(req), ...summarizeMcpBody(req.body), mcpRole: authContext.mcpRole });
+  const server = buildServer(authContext);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on("close", () => {
     transport.close();
