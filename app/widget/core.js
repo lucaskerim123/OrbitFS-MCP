@@ -18,6 +18,13 @@ if (!window.OrbitFSBridge) {
 }
 
 document.documentElement.classList.toggle("claude-host", OrbitFSBridge.hostName !== "chatgpt");
+// window.ORBITFS_MCP_ROLE is inlined per-connection by the server (see
+// injectMcpRole in server.js) - "member" sessions only have tools for
+// Context/Files/Server Status, so Startup/Vent/Journal (which need tools
+// that were never registered for them - see MEMBER_ALLOWED_TOOLS) are
+// hidden rather than shown broken.
+const ORBITFS_RESTRICTED = window.ORBITFS_MCP_ROLE === "member";
+document.documentElement.classList.toggle("orbitfs-restricted", ORBITFS_RESTRICTED);
 
 let currentPath='',currentEntries=[],contextPath='',contextEntries=[],selectedProject='',selectedStrength='medium';
 function callTool(name,args={}){return OrbitFSBridge.callTool(name,args)}
@@ -70,7 +77,7 @@ function setService(cardId,textId,online,label){const c=document.getElementById(
 async function refreshServerStatus(){try{const r=await tool('server_status',{}),text=textFrom(r);const hiveRunning=/The OrbitFS Server[\s\S]*?Running:\s*Yes/i.test(text),cloudOnline=/Connected Online:\s*(Likely yes|Yes)/i.test(text)||/The OrbitFS Server[\s\S]*?Online:\s*(Likely yes|Local only)/i.test(text),panelOnline=/Connected locally:\s*Yes/i.test(text),sorterMatch=text.match(/Sorter[^:\n]*:\s*([^\n]+)/i);setService('cardMcp','statusMcp',hiveRunning,hiveRunning?'Online':'Offline');setService('cardCloud','statusCloud',cloudOnline,cloudOnline?'Online':'Offline');setService('cardPanel','statusPanel',panelOnline,panelOnline?'Online':'Offline');const sorterOnline=!!sorterMatch&&!/offline|stopped|missing|not/i.test(sorterMatch[1]);setService('cardSorter','statusSorter',sorterOnline,sorterOnline?'Online':'When will this ever come 🤔');statusOutput.textContent='Checked now';statusOutput.classList.remove('hidden')}catch(e){setService('cardMcp','statusMcp',false,'Offline');setService('cardCloud','statusCloud',false,'Offline');setService('cardPanel','statusPanel',false,'Offline');setService('cardSorter','statusSorter',false,'When will this ever come 🤔');statusOutput.textContent=e.message||String(e);statusOutput.classList.remove('hidden')}}serverStatus.onclick=refreshServerStatus;
 
 let initialViewApplied=false;
-function applyInitialView(view){if(initialViewApplied)return;const requested=view||'startup';const mapped=requested==='browser'?'files':requested;if(['startup','context','files','vent','journal','system'].includes(mapped))setTab(mapped);initialViewApplied=true}
+function applyInitialView(view){if(initialViewApplied)return;const requested=view||(ORBITFS_RESTRICTED?'context':'startup');const mapped=requested==='browser'?'files':requested;const allowed=ORBITFS_RESTRICTED?['context','files','system']:['startup','context','files','vent','journal','system'];if(allowed.includes(mapped))setTab(mapped);else if(ORBITFS_RESTRICTED)setTab('context');initialViewApplied=true}
 OrbitFSBridge.onViewUpdate(applyInitialView);
 OrbitFSBridge.ready.then(()=>applyInitialView(OrbitFSBridge.getInitialView()));
 setTimeout(()=>applyInitialView(OrbitFSBridge.getInitialView()),0);
