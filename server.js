@@ -88,7 +88,7 @@ const CONFIG_PATH = path.join(ROOT, "_system", "Config", "startup-loading.json")
 const originalTool = McpServer.prototype.tool;
 const resourceRegistered = new WeakSet();
 const extraToolsRegistered = new WeakSet();
-const DEFAULT_PUBLIC_ORIGIN = "https://mcp.incendiarynetworks.cc";
+const DEFAULT_PUBLIC_ORIGIN = "https://hive.incendiarynetworks.cc";
 const CONTEXT_TTL_MS = null;
 let capturedLoadFileHandler = null;
 const HIVE_SCREENS = ["startup", "browser", "files", "viewer", "context", "vent", "journal", "system", "settings", "permissions", "search", "move", "upload"];
@@ -364,7 +364,7 @@ function registerWidget(server, authContext = {}) {
     "orbitfs-chatgpt-ui",
     CHATGPT_WIDGET_URI,
     { title: "OrbitFS ChatGPT UI", description: "ChatGPT-specific OrbitFS controls", mimeType: "text/html;profile=mcp-app", _meta: chatGptWidgetMeta },
-    async () => ({ contents: [{ uri: CHATGPT_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: CHATGPT_UI.widgetHtml, _meta: chatGptWidgetMeta }] })
+    async () => ({ contents: [{ uri: CHATGPT_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: injectMcpRole(CHATGPT_UI.widgetHtml, authContext.mcpRole), _meta: chatGptWidgetMeta }] })
   );
   server.registerResource(
     "orbitfs-help",
