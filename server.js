@@ -330,7 +330,19 @@ function buildChatGptMeta(widgetDescription, widgetDomain = getWidgetDomain()) {
   };
 }
 
-function registerWidget(server) {
+// The legacy shell (app/widget/shell.html) carries a /*__MCP_ROLE__*/ script
+// placeholder left unresolved by assembleLegacyWidget() at module-load time
+// (only the ChatGPT/Claude bridge + ext-apps bundle get inlined then, since
+// those are the same for every connection). Role isn't known until a
+// specific connection resolves via resolveMcpRole, so it's injected here,
+// per-connection, at resource-read time instead - see core.js for how the
+// widget uses window.ORBITFS_MCP_ROLE to hide Startup/Vent/Journal for a
+// "member" session (those need tools that were never registered for them).
+function injectMcpRole(html, mcpRole) {
+  return html.replace("/*__MCP_ROLE__*/", () => `window.ORBITFS_MCP_ROLE=${JSON.stringify(mcpRole || "owner")};`);
+}
+
+function registerWidget(server, authContext = {}) {
   if (resourceRegistered.has(server)) return;
   resourceRegistered.add(server);
   const widgetDomain = getWidgetDomain();
@@ -346,7 +358,7 @@ function registerWidget(server) {
     "orbitfs-ui",
     WIDGET_URI,
     { title: "OrbitFS UI", description: "Legacy OrbitFS controls for existing clients, including Claude", mimeType: "text/html;profile=mcp-app", _meta: widgetMeta },
-    async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: WIDGET_HTML, _meta: widgetMeta }] })
+    async () => ({ contents: [{ uri: WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: injectMcpRole(WIDGET_HTML, authContext.mcpRole), _meta: widgetMeta }] })
   );
   server.registerResource(
     "orbitfs-chatgpt-ui",
@@ -358,7 +370,7 @@ function registerWidget(server) {
     "orbitfs-help",
     HELP_WIDGET_URI,
     { title: "OrbitFS Command Help", description: "Verified OrbitFS commands", mimeType: "text/html;profile=mcp-app", _meta: helpMeta },
-    async () => ({ contents: [{ uri: HELP_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: HELP_WIDGET_HTML, _meta: helpMeta }] })
+    async () => ({ contents: [{ uri: HELP_WIDGET_URI, mimeType: "text/html;profile=mcp-app", text: injectMcpRole(HELP_WIDGET_HTML, authContext.mcpRole), _meta: helpMeta }] })
   );
   server.registerResource(
     "orbitfs-chatgpt-help",
@@ -875,7 +887,7 @@ function registerExtraTools(server, authContext) {
 }
 
 McpServer.prototype.tool = function patchedTool(name, description, schema, handler) {
-  registerWidget(this);
+  registerWidget(this, this.authContext);
   registerExtraTools(this, this.authContext);
 
   if (this.authContext.mcpRole === "member" && !MEMBER_ALLOWED_TOOLS.has(name)) return;
