@@ -94,6 +94,19 @@ let capturedLoadFileHandler = null;
 const HIVE_SCREENS = ["startup", "browser", "files", "viewer", "context", "vent", "journal", "system", "settings", "permissions", "search", "move", "upload"];
 const HIVE_MODALS = ["permissions", "move", "info", "upload", "delete"];
 
+// Tools passed through from server-core.js's registrations that a "member"
+// connection (see resolveMcpRole in server-core.js) may use. Everything not
+// listed here is never registered at all for a member session - not hidden
+// client-side, actually absent from tools/list and tools/call. Deliberately
+// narrow for this first cut: read-only browsing + context, no Startup (a
+// member's workspace has no project structure for it to load), no
+// write/upload/delete/move, no vent/journal. Widen later as needed.
+const MEMBER_ALLOWED_TOOLS = new Set(["list_files", "read_file", "load_file", "server_status"]);
+// Same idea for the tools registerExtraTools registers directly via
+// server.registerTool() (bypasses the patchedTool() gate below entirely,
+// so it needs its own check - see registerExtraTools).
+const MEMBER_ALLOWED_EXTRA_TOOLS = new Set(["showcp", "orbitfs_ui", "show_orbitfs_ui", "list_active_context", "unload_context_file", "unload_context_files", "clear_active_context"]);
+
 // UI navigation state and loaded-file context are per client (ChatGPT vs Claude vs
 // webpanel), keyed by authContext.flow - see oauth.js classifyRedirect. This keeps
 // two clients connected as the same person from stomping on each other's open
@@ -656,13 +669,15 @@ function toolUiMeta(resourceUri, isChatGpt) {
 function registerExtraTools(server, authContext) {
   if (extraToolsRegistered.has(server)) return;
   extraToolsRegistered.add(server);
+  const isMember = authContext.mcpRole === "member";
+  const allowExtra = (name) => !isMember || MEMBER_ALLOWED_EXTRA_TOOLS.has(name);
   const isChatGpt = flowKey(authContext) === "chatgpt";
   const uiResourceUri = isChatGpt ? CHATGPT_WIDGET_URI : WIDGET_URI;
   const helpResourceUri = isChatGpt ? CHATGPT_HELP_WIDGET_URI : HELP_WIDGET_URI;
   const uiMeta = toolUiMeta(uiResourceUri, isChatGpt);
   const helpMeta = toolUiMeta(helpResourceUri, isChatGpt);
 
-  server.registerTool("showcp", {
+  if (allowExtra("showcp")) server.registerTool("showcp", {
     title: "Open OrbitFS Control Panel",
     description: "Directly open the main OrbitFS control panel. This is the tool for /showcp and the UI navigation slash commands.",
     inputSchema: { view: z.enum(["startup", "context", "files", "vent", "journal", "system"]).optional() },
@@ -683,7 +698,7 @@ function registerExtraTools(server, authContext) {
     };
   });
 
-  server.registerTool("orbitfs_help", {
+  if (allowExtra("orbitfs_help")) server.registerTool("orbitfs_help", {
     title: "Open OrbitFS Command Help",
     description: "Open the separate searchable OrbitFS ChatGPT command reference. Use for /orbithelp.",
     inputSchema: {},
@@ -695,7 +710,7 @@ function registerExtraTools(server, authContext) {
     _meta: helpMeta,
   }));
 
-  server.registerTool("orbitfs_ui", {
+  if (allowExtra("orbitfs_ui")) server.registerTool("orbitfs_ui", {
     title: "The OrbitFS UI controller",
     description: "Central controller for the OrbitFS UI in ChatGPT or Claude. Use for commands like '@OrbitFS open startup', '@OrbitFS open browser', '@OrbitFS open viewer <file>', '@OrbitFS close', '@OrbitFS back', '@OrbitFS refresh', '@OrbitFS focus', '@OrbitFS status', and '@OrbitFS modal <permissions|move|info|upload|delete|close>'.",
     inputSchema: {
@@ -741,7 +756,7 @@ function registerExtraTools(server, authContext) {
     return { content: [{ type: "text", text }], structuredContent: publicSnapshot, _meta: { ...uiMeta, orbitfsState: hiveUiSnapshot(authContext, { action, target: target || null }) } };
   });
 
-  server.registerTool("show_orbitfs_ui", {
+  if (allowExtra("show_orbitfs_ui")) server.registerTool("show_orbitfs_ui", {
     title: "Open the OrbitFS UI",
     description: "Open the OrbitFS UI in ChatGPT. Use for /orbitfs, /files, /context, /profiles, /upload, or natural-language requests to open or manage OrbitFS.",
     inputSchema: { view: z.enum(["startup", "context", "files", "upload"]).optional() },
@@ -763,7 +778,7 @@ function registerExtraTools(server, authContext) {
     };
   });
 
-  server.registerTool("list_active_context", {
+  if (allowExtra("list_active_context")) server.registerTool("list_active_context", {
     title: "List active OrbitFS context",
     description: "List files currently marked active for this OrbitFS ChatGPT session without reloading file contents.",
     inputSchema: {},
@@ -777,7 +792,7 @@ function registerExtraTools(server, authContext) {
     };
   });
 
-  server.registerTool("unload_context_file", {
+  if (allowExtra("unload_context_file")) server.registerTool("unload_context_file", {
     title: "Unload OrbitFS context file",
     description: "Remove a file from the authoritative active OrbitFS context set. This cannot erase text already present earlier in the chat, but ChatGPT must stop treating it as active OrbitFS context.",
     inputSchema: { filepath: z.string() },
@@ -790,7 +805,7 @@ function registerExtraTools(server, authContext) {
     return { content: [{ type: "text", text: `[ORBITFS CONTEXT UPDATE] ${key} is unloaded and must no longer be treated as active OrbitFS context.` }], structuredContent: contextStructured(authContext) };
   });
 
-  server.registerTool("unload_context_files", {
+  if (allowExtra("unload_context_files")) server.registerTool("unload_context_files", {
     title: "Unload multiple OrbitFS context files",
     description: "Remove several files from the authoritative active OrbitFS context set in one call.",
     inputSchema: { filepaths: z.array(z.string()).min(1) },
@@ -810,7 +825,7 @@ function registerExtraTools(server, authContext) {
     return { content: [{ type: "text", text }], structuredContent: contextStructured(authContext, { unloaded }) };
   });
 
-  server.registerTool("clear_active_context", {
+  if (allowExtra("clear_active_context")) server.registerTool("clear_active_context", {
     title: "Clear active OrbitFS context",
     description: "Unload every file from the authoritative active OrbitFS context set.",
     inputSchema: {},
@@ -822,7 +837,7 @@ function registerExtraTools(server, authContext) {
     return { content: [{ type: "text", text: "[ORBITFS CONTEXT UPDATE] All OrbitFS files are no longer active." }], structuredContent: contextStructured(authContext) };
   });
 
-  server.registerTool("clear_all_context", {
+  if (allowExtra("clear_all_context")) server.registerTool("clear_all_context", {
     title: "Clear all OrbitFS context, including pinned",
     description: "Unload every file from the active OrbitFS context set, including pinned startup-required files. Use only when the user explicitly wants a full reset, not for routine unloading.",
     inputSchema: {},
@@ -834,7 +849,7 @@ function registerExtraTools(server, authContext) {
     return { content: [{ type: "text", text: "[ORBITFS CONTEXT UPDATE] All OrbitFS files, including pinned startup-required context, are no longer active." }], structuredContent: contextStructured(authContext) };
   });
 
-  server.registerTool("load_all_profiles", {
+  if (allowExtra("load_all_profiles")) server.registerTool("load_all_profiles", {
     title: "Load all Master Profiles",
     description: "Find and fully load all Master Profile text and DOCX files into active ChatGPT context.",
     inputSchema: {},
@@ -861,6 +876,9 @@ function registerExtraTools(server, authContext) {
 
 McpServer.prototype.tool = function patchedTool(name, description, schema, handler) {
   registerWidget(this);
+  registerExtraTools(this, this.authContext);
+
+  if (this.authContext.mcpRole === "member" && !MEMBER_ALLOWED_TOOLS.has(name)) return;
 
   if (name === "load_file") {
     capturedLoadFileHandler = handler;
@@ -882,7 +900,6 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     }
     return originalTool.call(this, name, description, schema, handler);
   }
-registerExtraTools(this, this.authContext);
   const isChatGpt = flowKey(this.authContext) === "chatgpt";
   const startupResourceUri = isChatGpt ? CHATGPT_WIDGET_URI : WIDGET_URI;
   const startupUiMeta = toolUiMeta(startupResourceUri, isChatGpt);

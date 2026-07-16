@@ -88,7 +88,7 @@ const FIRESTORM_LOAD_ALIASES = {
   high: "high",
 };
 
-const ops = makeOps(ROOT);
+const mainOps = makeOps(ROOT);
 const execFileAsync = promisify(execFile);
 const MASTER_BRAIN_LOCAL_URL = `http://127.0.0.1:${process.env.PANEL_PORT || 4000}/`;
 const HIVE_LOCAL_PING_URL = `http://127.0.0.1:${PORT}/api/ping`;
@@ -388,7 +388,7 @@ async function signFileViewToken(relPath) {
 async function buildFileWebLink(filepath) {
   const normalized = normalizeRelativePath(filepath);
   if (!normalized) throw new Error("Path is required");
-  const full = ops.safeResolve(normalized);
+  const full = mainOps.safeResolve(normalized);
   const st = await fs.stat(full);
   if (st.isDirectory()) {
     throw new Error(`"${normalized}" is a folder, not a file. Point /openfileweb at a specific file.`);
@@ -401,7 +401,7 @@ async function buildFileWebLink(filepath) {
 async function buildTemporaryDownloadLink(filepath, requireFolder = false) {
   const normalized = normalizeRelativePath(filepath);
   if (!normalized) throw new Error("Path is required");
-  const full = ops.safeResolve(normalized);
+  const full = mainOps.safeResolve(normalized);
   const st = await fs.stat(full);
   const kind = st.isDirectory() ? "folder" : "file";
   if (requireFolder && kind !== "folder") throw new Error(`"${normalized}" is a file, not a folder`);
@@ -419,7 +419,7 @@ async function buildTemporaryDownloadLink(filepath, requireFolder = false) {
 
 async function streamFolderZip(res, relPath) {
   const normalized = normalizeRelativePath(relPath);
-  const full = ops.safeResolve(normalized);
+  const full = mainOps.safeResolve(normalized);
   const st = await fs.stat(full);
   if (!st.isDirectory()) throw new Error(`"${normalized}" is not a folder`);
   const archiveName = `${path.basename(full) || "OrbitFS"}.zip`;
@@ -446,7 +446,7 @@ async function readFilesBatch(filepaths) {
     const filepath = normalizeRelativePath(requested);
     try {
       if (!filepath) throw new Error("Path is required");
-      const data = await ops.readFile(filepath);
+      const data = await mainOps.readFile(filepath);
       const remaining = Math.max(0, BATCH_READ_MAX_CHARS - totalChars);
       const allowed = Math.min(BATCH_READ_MAX_CHARS_PER_FILE, remaining);
       const content = data.slice(0, allowed);
@@ -826,13 +826,13 @@ async function movePathToTrash(filepath, authContext = {}) {
   if (isTrashPath(normalized)) throw new Error(`Path is already inside ${TRASH_FOLDER}`);
   const stamp = `${trashEntryPrefix()}-${crypto.randomBytes(3).toString("hex")}`;
   const destination = `${TRASH_FOLDER}/${stamp}/${normalized}`;
-  await ops.moveFile(normalized, destination);
+  await mainOps.moveFile(normalized, destination);
   logEvent("file.change.trash", { ...authContext, source: authContext.source || "api", from: normalized, to: destination });
   return { from: normalized, to: destination };
 }
 
 async function moveTrashEntryToGhost(relPath, authContext = {}) {
-  const source = ops.safeResolve(relPath);
+  const source = mainOps.safeResolve(relPath);
   const stamp = `${trashEntryPrefix()}-${crypto.randomBytes(3).toString("hex")}`;
   const safeName = path.basename(normalizeRelativePath(relPath)) || "trash-entry";
   const destination = path.join(GHOST_TRASH_ROOT, `${stamp}-${safeName}`);
@@ -851,7 +851,7 @@ async function moveTrashEntryToGhost(relPath, authContext = {}) {
 async function emptyTrash(authContext = {}) {
   let entries;
   try {
-    entries = await ops.listFiles(TRASH_FOLDER, { recursive: false });
+    entries = await mainOps.listFiles(TRASH_FOLDER, { recursive: false });
   } catch (err) {
     if (err.code === "ENOENT") return { deleted: [], deletedCount: 0, note: `${TRASH_FOLDER} does not exist.` };
     throw err;
@@ -871,7 +871,7 @@ async function emptyTrash(authContext = {}) {
 async function purgeExpiredTrash(authContext = {}) {
   let entries;
   try {
-    entries = await ops.listFiles(TRASH_FOLDER, { recursive: false });
+    entries = await mainOps.listFiles(TRASH_FOLDER, { recursive: false });
   } catch (err) {
     if (err.code === "ENOENT") return { deleted: [], deletedCount: 0, note: `${TRASH_FOLDER} does not exist.` };
     throw err;
@@ -885,7 +885,7 @@ async function purgeExpiredTrash(authContext = {}) {
     const relPath = `${TRASH_FOLDER}/${entry.name}`;
     let stat;
     try {
-      stat = await fs.stat(ops.safeResolve(relPath));
+      stat = await fs.stat(mainOps.safeResolve(relPath));
     } catch (err) {
       if (err.code === "ENOENT") continue;
       throw err;
@@ -943,7 +943,7 @@ function summarizeEntries(entries, prefix = "") {
 
 async function readOptionalFile(filepath) {
   try {
-    return await ops.readFile(filepath);
+    return await mainOps.readFile(filepath);
   } catch (err) {
     if (err.code === "ENOENT") return null;
     throw err;
@@ -1002,7 +1002,7 @@ function shouldDeferStartupFile(filepath) {
   return inMasterProfiles && !isMandatoryStartupFile(filepath);
 }
 
-async function readStartupFile(filepath) {
+async function readStartupFile(ops, filepath) {
   const ext = path.extname(filepath).toLowerCase();
   if (ext === ".docx") {
     const result = await mammoth.extractRawText({ path: ops.safeResolve(filepath) });
@@ -1020,7 +1020,7 @@ async function readStartupFile(filepath) {
   return `[FILE REFERENCE]\nPath: ${filepath}\nType: ${ext.slice(1).toUpperCase() || "UNKNOWN"}\nSize: ${stat.size} bytes\nReadable text was not extracted automatically. Use view_file/open_file_web/download link or a specialist extractor for this file type.`;
 }
 
-async function extractViewableFile(filepath) {
+async function extractViewableFile(ops, filepath) {
   const ext = path.extname(filepath).toLowerCase();
   if (ext === ".docx") {
     const result = await mammoth.extractRawText({ path: ops.safeResolve(filepath) });
@@ -1076,7 +1076,7 @@ async function discoverStartupContextFiles(folders, alreadyLoaded, fileIndexText
   for (const folder of folders) {
     let entries;
     try {
-      entries = await ops.listFiles(folder, { recursive: true });
+      entries = await mainOps.listFiles(folder, { recursive: true });
     } catch {
       continue;
     }
@@ -1107,7 +1107,7 @@ async function loadStartupContextFiles(filepaths, load) {
     for (const filepath of batch) {
       let data;
       try {
-        data = await readStartupFile(filepath);
+        data = await readStartupFile(mainOps, filepath);
       } catch (err) {
         files.push({ filepath, error: err.message });
         continue;
@@ -1150,7 +1150,7 @@ function scorePathReference(candidatePath, reference) {
   return 500 + words.reduce((score, word) => score + (basename.includes(word) ? 20 : 5), 0);
 }
 
-async function resolveHiveReference(reference, expectedType) {
+async function resolveHiveReference(ops, reference, expectedType) {
   const normalized = normalizeRelativePath(reference);
   if (!normalized) throw new Error("A file or folder name is required");
   try {
@@ -1192,7 +1192,7 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
   // The rules: requested project startup file(s) plus the level-appropriate
   // rule files, inlined (capped) - this is the context the model must follow.
   for (const file of [...startupFiles, ...ruleFiles]) {
-    const content = await ops.readFile(file);
+    const content = await mainOps.readFile(file);
     sections.push("", `===== ${file} =====`, clipStartupText(content, fileCap, file));
   }
 
@@ -1215,7 +1215,7 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
   sections.push("", "Folders in scope:");
   for (const folder of listedFolders) {
     try {
-      const entries = (await ops.listFiles(folder, { recursive: false }))
+      const entries = (await mainOps.listFiles(folder, { recursive: false }))
         .filter((entry) => !isArchivePath(`${folder}/${entry.name}`));
       const shown = entries.slice(0, STARTUP_FOLDER_ENTRY_CAP);
       sections.push("", `===== ${folder} =====`, summarizeEntries(shown, "  "));
@@ -1229,7 +1229,7 @@ async function buildFirestormStartup(projectsInput, loadInput, authContext = {})
           .filter((childDir) => !isArchivePath(childDir));
         for (const childDir of childDirs) {
           try {
-            const childEntries = (await ops.listFiles(childDir, { recursive: false }))
+            const childEntries = (await mainOps.listFiles(childDir, { recursive: false }))
               .filter((entry) => !isArchivePath(`${childDir}/${entry.name}`));
             const childShown = childEntries.slice(0, STARTUP_FOLDER_ENTRY_CAP);
             sections.push("", `--- ${childDir} ---`, summarizeEntries(childShown, "    "));
@@ -1313,6 +1313,12 @@ function buildServer(authContext = {}) {
     icons: [{ src: SERVER_ICON_SVG, mimeType: "image/svg+xml" }],
   });
   server.authContext = authContext;
+  // Every tool handler below closes over this "ops" - a member connection
+  // (see resolveMcpRole) gets its own instance scoped to their linked
+  // workspace's filesystem_root, so safeResolve() can never let them reach
+  // outside it. Owner/api_key connections (no workspaceRoot) keep using the
+  // shared mainOps bound to HIVE_ROOT, unchanged from before this existed.
+  const ops = authContext.mcpRole === "member" && authContext.workspaceRoot ? makeOps(authContext.workspaceRoot) : mainOps;
 
   server.tool(
     "list_files",
@@ -1353,13 +1359,13 @@ function buildServer(authContext = {}) {
     async ({ filepath }) => {
       const requested = normalizeRelativePath(filepath);
       if (!requested) throw new Error("filepath is required");
-      const resolved = await resolveHiveReference(requested, "file");
+      const resolved = await resolveHiveReference(ops, requested, "file");
       const normalized = resolved.path;
       if (!isStartupReadableFile(normalized)) {
         throw new Error(`Resolved "${requested}" to "${normalized}", but load_file supports readable text files and DOCX files. Use open_file_web for binary media or PDFs.`);
       }
       logEvent("tool.load_file.start", { ...authContext, filepath: normalized, requested, matchedBy: resolved.matchedBy });
-      const data = await readStartupFile(normalized);
+      const data = await readStartupFile(ops, normalized);
       logEvent("tool.load_file.ok", { ...authContext, filepath: normalized, requested, chars: data.length });
       return {
         content: [{
@@ -1375,8 +1381,8 @@ function buildServer(authContext = {}) {
     "Open a PDF, DOCX, or readable text file in the expandable OrbitFS document viewer UI.",
     { filepath: z.string().describe("File path or filename") },
     async ({ filepath }) => {
-      const resolved = await resolveHiveReference(filepath, "file");
-      const extracted = await extractViewableFile(resolved.path);
+      const resolved = await resolveHiveReference(ops, filepath, "file");
+      const extracted = await extractViewableFile(ops, resolved.path);
       const structuredContent = buildDocumentView(resolved.path, extracted, false);
       logEvent("tool.view_file.ok", { ...authContext, filepath: resolved.path, format: extracted.format });
       return {
@@ -1391,8 +1397,8 @@ function buildServer(authContext = {}) {
     "Preview the first section of a PDF, DOCX, or readable text file in the compact OrbitFS document viewer UI.",
     { filepath: z.string().describe("File path or filename") },
     async ({ filepath }) => {
-      const resolved = await resolveHiveReference(filepath, "file");
-      const extracted = await extractViewableFile(resolved.path);
+      const resolved = await resolveHiveReference(ops, filepath, "file");
+      const extracted = await extractViewableFile(ops, resolved.path);
       const structuredContent = buildDocumentView(resolved.path, extracted, true);
       logEvent("tool.preview_file.ok", { ...authContext, filepath: resolved.path, format: extracted.format });
       return {
@@ -1611,8 +1617,8 @@ function buildServer(authContext = {}) {
       confirmed: z.boolean().optional().describe("false previews only; true executes after explicit confirmation"),
     },
     async ({ source, destination_folder, new_name, confirmed }) => {
-      const resolvedSource = await resolveHiveReference(source);
-      const resolvedDestination = await resolveHiveReference(destination_folder, "dir");
+      const resolvedSource = await resolveHiveReference(ops, source);
+      const resolvedDestination = await resolveHiveReference(ops, destination_folder, "dir");
       const finalName = String(new_name || path.basename(resolvedSource.path)).trim();
       if (!finalName || finalName.includes("/") || finalName.includes("\\")) throw new Error("new_name must be a name only, not a path");
       const to = `${resolvedDestination.path}/${finalName}`;
@@ -2145,7 +2151,7 @@ app.use("/api", async (req, res, next) => {
 
 app.get("/api/manifest", async (req, res) => {
   try {
-    const files = await ops.manifest();
+    const files = await mainOps.manifest();
     logEvent("api.manifest.ok", { ...requestContext(req), count: files.length });
     res.json({ files });
   } catch (err) {
@@ -2156,7 +2162,7 @@ app.get("/api/manifest", async (req, res) => {
 
 app.get("/api/files", async (req, res) => {
   try {
-    const dir = ops.safeResolve(req.query.subpath);
+    const dir = mainOps.safeResolve(req.query.subpath);
     let entries = await fs.readdir(dir, { withFileTypes: true });
     entries = filterLegacyTopLevelEntries(req.query.subpath, entries);
     const withStats = await Promise.all(
@@ -2178,7 +2184,7 @@ app.get("/api/files/recursive", async (req, res) => {
   try {
     const subpath = normalizeRelativePath(req.query.path || "");
     const limit = Math.min(Number(req.query.max_entries || RECURSIVE_LIST_MAX_ENTRIES), RECURSIVE_LIST_MAX_ENTRIES);
-    let entries = await ops.listFiles(subpath, { recursive: true });
+    let entries = await mainOps.listFiles(subpath, { recursive: true });
     entries = filterVentFolder(subpath, entries, true);
     const truncated = entries.length > limit;
     entries = entries.slice(0, limit);
@@ -2214,7 +2220,7 @@ app.get("/api/export-folder-link", async (req, res) => {
 
 app.get("/api/file", async (req, res) => {
   try {
-    const content = await ops.readFile(req.query.path);
+    const content = await mainOps.readFile(req.query.path);
     logEvent("api.file.read.ok", { ...requestContext(req), path: req.query.path, chars: content.length });
     res.json({ content });
   } catch (err) {
@@ -2225,7 +2231,7 @@ app.get("/api/file", async (req, res) => {
 
 app.get("/api/stat", async (req, res) => {
   try {
-    const info = await ops.statFile(req.query.path);
+    const info = await mainOps.statFile(req.query.path);
     logEvent("api.stat.ok", { ...requestContext(req), path: req.query.path });
     res.json(info);
   } catch (err) {
@@ -2238,7 +2244,7 @@ app.get("/api/search", async (req, res) => {
   try {
     const query = String(req.query.query || "");
     if (!query) throw new Error("query is required");
-    const matches = await ops.searchFiles(query, req.query.subpath);
+    const matches = await mainOps.searchFiles(query, req.query.subpath);
     logEvent("api.search.ok", { ...requestContext(req), query, subpath: req.query.subpath || "", matchCount: matches.length });
     res.json({ matches });
   } catch (err) {
@@ -2249,7 +2255,7 @@ app.get("/api/search", async (req, res) => {
 
 app.put("/api/file", async (req, res) => {
   try {
-    await ops.writeFile(req.body.path, req.body.content ?? "");
+    await mainOps.writeFile(req.body.path, req.body.content ?? "");
     logEvent("file.change.write", { ...requestContext(req), source: "rest_api", path: req.body.path, chars: (req.body.content ?? "").length });
     res.json({ ok: true });
   } catch (err) {
@@ -2260,7 +2266,7 @@ app.put("/api/file", async (req, res) => {
 
 app.delete("/api/file", async (req, res) => {
   try {
-    await ops.deleteFile(assertMutablePath(req.query.path, "delete"));
+    await mainOps.deleteFile(assertMutablePath(req.query.path, "delete"));
     logEvent("file.change.delete", { ...requestContext(req), source: "rest_api", path: req.query.path });
     res.json({ ok: true });
   } catch (err) {
@@ -2272,7 +2278,7 @@ app.delete("/api/file", async (req, res) => {
 app.post("/api/move", async (req, res) => {
   try {
     assertMutablePath(req.body.from, "move");
-    await ops.moveFile(req.body.from, req.body.to);
+    await mainOps.moveFile(req.body.from, req.body.to);
     logEvent("file.change.move", { ...requestContext(req), source: "rest_api", from: req.body.from, to: req.body.to });
     res.json({ ok: true });
   } catch (err) {
@@ -2283,7 +2289,7 @@ app.post("/api/move", async (req, res) => {
 
 app.post("/api/mkdir", async (req, res) => {
   try {
-    await ops.makeDir(req.body.path);
+    await mainOps.makeDir(req.body.path);
     logEvent("file.change.mkdir", { ...requestContext(req), source: "rest_api", path: req.body.path });
     res.json({ ok: true });
   } catch (err) {
@@ -2294,7 +2300,7 @@ app.post("/api/mkdir", async (req, res) => {
 
 app.get("/api/download", async (req, res) => {
   try {
-    const full = ops.safeResolve(req.query.path);
+    const full = mainOps.safeResolve(req.query.path);
     logEvent("api.download.start", { ...requestContext(req), path: req.query.path });
     res.download(full, path.basename(full));
   } catch (err) {
@@ -2330,7 +2336,7 @@ app.get("/open", async (req, res) => {
     if (payload.purpose !== "file_view" || payload.path !== relPath) {
       throw new Error("Token does not match the requested file");
     }
-    const full = ops.safeResolve(relPath);
+    const full = mainOps.safeResolve(relPath);
     logEvent("open.file.ok", { ...requestContext(req), path: relPath });
     res.sendFile(full);
   } catch (err) {
@@ -2348,7 +2354,7 @@ app.get("/download-temp", async (req, res) => {
     if (payload.purpose !== "temporary_download" || payload.path !== relPath) {
       throw new Error("Token does not match the requested path");
     }
-    const full = ops.safeResolve(relPath);
+    const full = mainOps.safeResolve(relPath);
     const st = await fs.stat(full);
     const actualKind = st.isDirectory() ? "folder" : "file";
     if (payload.kind !== actualKind) throw new Error("Path type changed after the link was created");
@@ -2389,7 +2395,7 @@ app.post("/api/upload", express.raw({ type: () => true, limit: FETCH_MAX_BYTES }
       }
       const uploadAuth = await verifyUploadLinkToken(token, { consume: true });
       const filepath = `${uploadAuth.destination}/${filename}`;
-      await ops.writeFile(filepath, buffer);
+      await mainOps.writeFile(filepath, buffer);
       logEvent("file.change.upload", {
         ...requestContext(req),
         source: "rest_api_upload_link",
@@ -2408,7 +2414,7 @@ app.post("/api/upload", express.raw({ type: () => true, limit: FETCH_MAX_BYTES }
     if (bytes.length > FETCH_MAX_BYTES) {
       throw new Error(`File too large (${bytes.length} bytes, over the ${FETCH_MAX_BYTES}-byte limit)`);
     }
-    await ops.writeFile(filepath, bytes);
+    await mainOps.writeFile(filepath, bytes);
     logEvent("file.change.upload", { ...requestContext(req), source: "rest_api", path: filepath, bytes: bytes.length });
     res.json({ ok: true, success: true, filepath, filename: path.basename(filepath), size: bytes.length, bytes: bytes.length });
   } catch (err) {
