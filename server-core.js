@@ -2064,39 +2064,78 @@ async function checkAuth(req) {
 // credential only the admin holds, same as before this existed. A JWT/CF
 // Access email either belongs to a system admin (owner, unrestricted, same
 // as legacy behavior) or has an active grant (member, scoped to one
-// workspace) or neither (denied - see the 403 above). If PANEL_INTERNAL_KEY
+// workspace) or neither (denied - see the 403 above). If MCP_INTERNAL_KEY
 // isn't configured at all, everyone stays "owner" so a fresh install or a
-// panel-less test setup keeps working exactly as before this feature. If it
-// IS configured but the lookup fails (panel down, network blip), fail
-// closed rather than risk handing a member full/owner access.
+// panel-less test setup keeps working exactly as before this feature.
+//
+// Every outcome gets a distinct denyReason (see below) instead of one
+// generic denial, and every resolution - success or failure - is logged
+// with the email involved, so "who connected as what, and why did this one
+// fail" is answerable from the event log instead of guesswork.
+//
+// If the panel gave a real answer ("no_account"/"no_grant"), that's
+// respected and NOT retried from cache - a revoked grant must take effect
+// immediately. If the panel couldn't be reached or errored, we fall back to
+// the last successful resolution for that email (lastKnownGood, no expiry)
+// rather than hard-denying - a transient panel blip shouldn't be able to
+// lock out someone who was already resolved as owner/member moments ago.
+// Only a *first-ever* lookup that fails has nothing to fall back to, and
+// stays denied - never fail open for an email we've never actually seen
+// the panel approve.
 const PANEL_INTERNAL_URL = process.env.PANEL_INTERNAL_URL || "http://127.0.0.1:4000";
 const MCP_INTERNAL_KEY = process.env.MCP_INTERNAL_KEY || "";
 const IDENTITY_CACHE_TTL_MS = 60_000;
 const identityCache = new Map();
+const lastKnownGood = new Map();
 
 async function resolveMcpRole(authContext) {
   if (authContext.type === "api_key") return { ...authContext, mcpRole: "owner" };
   const email = String(authContext.email || "").trim().toLowerCase();
-  if (!email) return { ...authContext, mcpRole: null };
+  if (!email) return { ...authContext, mcpRole: null, denyReason: "no_email" };
   if (!MCP_INTERNAL_KEY) return { ...authContext, mcpRole: "owner" };
+
   const cached = identityCache.get(email);
   if (cached && cached.expiresAt > Date.now()) return { ...authContext, ...cached.fields };
+
+  let resp;
   try {
-    const resp = await fetch(`${PANEL_INTERNAL_URL}/internal/mcp-identity?email=${encodeURIComponent(email)}`, {
+    resp = await fetch(`${PANEL_INTERNAL_URL}/internal/mcp-identity?email=${encodeURIComponent(email)}`, {
       headers: { "X-Internal-Key": MCP_INTERNAL_KEY },
       signal: AbortSignal.timeout(5000),
     });
-    if (!resp.ok) throw new Error(`identity lookup returned ${resp.status}`);
-    const identity = await resp.json();
-    const fields = identity.role === "member" && !identity.workspaceRoot
-      ? { mcpRole: null }
-      : { mcpRole: identity.role || null, workspaceId: identity.workspaceId || null, workspaceRoot: identity.workspaceRoot || null, workspaceName: identity.workspaceName || null };
-    identityCache.set(email, { fields, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS });
-    return { ...authContext, ...fields };
   } catch (err) {
-    logError("mcp.identity.lookup_failed", err, { email });
-    return { ...authContext, mcpRole: null };
+    logError("mcp.identity.unreachable", err, { email, panelUrl: PANEL_INTERNAL_URL });
+    const fallback = lastKnownGood.get(email);
+    if (fallback) {
+      logEvent("mcp.identity.fallback_used", { email, reason: "unreachable", ...fallback });
+      return { ...authContext, ...fallback };
+    }
+    return { ...authContext, mcpRole: null, denyReason: "identity_unreachable" };
   }
+
+  if (resp.status === 401) {
+    logError("mcp.identity.unauthorized", new Error("panel rejected X-Internal-Key - check it matches on both sides"), { email });
+    return { ...authContext, mcpRole: null, denyReason: "identity_unauthorized" };
+  }
+  if (!resp.ok) {
+    logError("mcp.identity.error", new Error(`panel returned ${resp.status}`), { email });
+    const fallback = lastKnownGood.get(email);
+    if (fallback) {
+      logEvent("mcp.identity.fallback_used", { email, reason: `http_${resp.status}`, ...fallback });
+      return { ...authContext, ...fallback };
+    }
+    return { ...authContext, mcpRole: null, denyReason: "identity_error" };
+  }
+
+  const identity = await resp.json().catch(() => ({}));
+  const fields = identity.role === "member" && !identity.workspaceRoot
+    ? { mcpRole: null }
+    : { mcpRole: identity.role || null, workspaceId: identity.workspaceId || null, workspaceRoot: identity.workspaceRoot || null, workspaceName: identity.workspaceName || null };
+  const denyReason = fields.mcpRole ? null : (identity.userId ? "no_grant" : "no_account");
+  identityCache.set(email, { fields, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS });
+  if (fields.mcpRole) lastKnownGood.set(email, fields);
+  logEvent("mcp.identity.resolved", { email, role: fields.mcpRole, workspaceId: fields.workspaceId || null, workspaceName: fields.workspaceName || null, denyReason });
+  return { ...authContext, ...fields, denyReason };
 }
 
 app.use("/mcp", async (req, res, next) => {
@@ -2111,11 +2150,21 @@ app.use("/mcp", async (req, res, next) => {
   next();
 });
 
+const MCP_DENY_MESSAGES = {
+  no_email: "This connection has no email to check access for.",
+  identity_unreachable: "Could not reach the OrbitFS panel to verify access. Try again shortly; if this persists, check PANEL_INTERNAL_URL.",
+  identity_unauthorized: "The MCP server and panel are misconfigured (internal key mismatch). Ask the admin to check MCP_INTERNAL_KEY matches in both .env files.",
+  identity_error: "The OrbitFS panel returned an error while verifying access. Try again shortly.",
+  no_account: "No OrbitFS account found for this email. If you're the admin, check your panel account's email (Account tab) matches this login exactly.",
+  no_grant: "This account has no MCP access. Ask a workspace owner to grant it.",
+};
+
 app.post("/mcp", async (req, res) => {
   const authContext = await resolveMcpRole(req.authContext || {});
   if (!authContext.mcpRole) {
-    logEvent("mcp.request.denied", { ...requestContext(req), reason: "no_mcp_role" });
-    return res.status(403).json({ error: "This account has no MCP access. Ask a workspace owner to grant it." });
+    const reason = authContext.denyReason || "unknown";
+    logEvent("mcp.request.denied", { ...requestContext(req), reason });
+    return res.status(403).json({ error: MCP_DENY_MESSAGES[reason] || "This account has no MCP access.", reason });
   }
   logEvent("mcp.request.start", { ...requestContext(req), ...summarizeMcpBody(req.body), mcpRole: authContext.mcpRole });
   const server = buildServer(authContext);
