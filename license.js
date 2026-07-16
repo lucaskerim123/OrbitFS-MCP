@@ -33,7 +33,11 @@ const cachePath = () => path.join(licenseDirectory(), "license.json");
 const keyPath = () => path.join(licenseDirectory(), "license-key.json");
 
 function refreshMs() {
-  return Math.max(60_000, Number(process.env.ORBITFS_LICENSE_REFRESH_MINUTES || 5) * 60_000);
+  return Math.max(60_000, Number(process.env.ORBITFS_LICENSE_REFRESH_MINUTES || 180) * 60_000);
+}
+
+function signalPollMs() {
+  return Math.max(60_000, Number(process.env.ORBITFS_LICENSE_SIGNAL_MINUTES || 1) * 60_000);
 }
 
 function graceMs() {
@@ -101,6 +105,24 @@ function providerConfig() {
     throw error;
   }
   return { url, token: String(process.env.ORBITFS_LICENSE_API_TOKEN || "").trim() };
+}
+
+async function fetchValidationRevision() {
+  const exact = String(process.env.ORBITFS_LICENSE_REVISION_URL || "").trim();
+  const base = String(process.env.ORBITFS_LICENSE_API_URL || process.env.ORBITFS_LICENSE_URL || "")
+    .trim().replace(/\/+$/, "");
+  const url = exact || (base ? `${base}/api/license/revision` : "");
+  if (!url) return null;
+  const headers = {};
+  const token = String(process.env.ORBITFS_LICENSE_API_TOKEN || "").trim();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(Number(process.env.ORBITFS_LICENSE_TIMEOUT_MS || 8000)),
+  });
+  if (!response.ok) throw new Error(`Licence revision API returned ${response.status}`);
+  const body = await response.json().catch(() => ({}));
+  return body.revision || null;
 }
 
 function normaliseComponents(value) {
@@ -235,7 +257,22 @@ export async function getLicenseSummary({ refresh = false } = {}) {
   const cache = await readJson(cachePath());
   if (!refresh && fresh(cache)) return { ...cache, enforcement: true };
   try {
-    const result = await callProvider({ licenseKey, components: ALL_COMPONENTS, activate: false });
+    let result = await callProvider({ licenseKey, components: ALL_COMPONENTS, activate: false });
+    const newlyEnabled = ALL_COMPONENTS.filter((component) => {
+      const previous = cache?.components?.[component];
+      const current = result.components?.[component];
+      return previous?.state === "blocked" && current?.state === "active"
+        && current?.allowed === true && current?.lockedToThisInstallation !== true;
+    });
+    if (newlyEnabled.length) {
+      const activated = await callProvider({ licenseKey, components: newlyEnabled, activate: true });
+      result = {
+        ...result,
+        valid: activated.valid,
+        reason: activated.reason,
+        components: { ...result.components, ...activated.components },
+      };
+    }
     return await persist(result, "refresh", licenseKey);
   } catch (error) {
     if (withinGrace(cache)) return { ...cache, enforcement: true, offlineGrace: true, refreshError: error.message };
@@ -298,9 +335,11 @@ export function licenseGuard(component) {
 }
 
 let licenseHeartbeatTimer = null;
+let licenseSignalTimer = null;
+let lastValidationRevision = null;
 
 export function startLicenseHeartbeat({ onUpdate, onError } = {}) {
-  if (licenseHeartbeatTimer) return () => {};
+  if (licenseHeartbeatTimer || licenseSignalTimer) return () => {};
   const check = async () => {
     if (!isLicenseEnforced()) return;
     try {
@@ -310,12 +349,34 @@ export function startLicenseHeartbeat({ onUpdate, onError } = {}) {
       onError?.(error);
     }
   };
+  const checkSignal = async () => {
+    if (!isLicenseEnforced()) return;
+    try {
+      const revision = await fetchValidationRevision();
+      if (!revision) return;
+      if (lastValidationRevision === null) {
+        lastValidationRevision = revision;
+        return;
+      }
+      if (revision !== lastValidationRevision) {
+        lastValidationRevision = revision;
+        await check();
+      }
+    } catch (error) {
+      onError?.(error);
+    }
+  };
   check();
+  checkSignal();
   licenseHeartbeatTimer = setInterval(check, refreshMs());
+  licenseSignalTimer = setInterval(checkSignal, signalPollMs());
   licenseHeartbeatTimer.unref?.();
+  licenseSignalTimer.unref?.();
   return () => {
     clearInterval(licenseHeartbeatTimer);
+    clearInterval(licenseSignalTimer);
     licenseHeartbeatTimer = null;
+    licenseSignalTimer = null;
   };
 }
 
