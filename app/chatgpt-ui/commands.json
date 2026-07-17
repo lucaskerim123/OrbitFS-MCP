@@ -1,27 +1,39 @@
 [
   {
-    "category": "UI",
+    "category": "OrbitFS UI",
     "command": "/orbithelp",
     "usage": "/orbithelp",
-    "description": "Open the OrbitFS command help window."
+    "description": "Open the searchable OrbitFS command help window."
   },
   {
-    "category": "UI",
+    "category": "OrbitFS UI",
     "command": "/showcp",
     "usage": "/showcp",
     "description": "Open the main OrbitFS control panel on Startup."
   },
   {
-    "category": "UI",
+    "category": "OrbitFS UI",
     "command": "/files",
     "usage": "/files",
     "description": "Open the OrbitFS control panel on Files."
   },
   {
-    "category": "UI",
+    "category": "OrbitFS UI",
     "command": "/context",
     "usage": "/context",
     "description": "Open the OrbitFS control panel on Context."
+  },
+  {
+    "category": "OrbitFS UI",
+    "command": "/vent",
+    "usage": "/vent",
+    "description": "Open the OrbitFS control panel on Vent."
+  },
+  {
+    "category": "OrbitFS UI",
+    "command": "/journal",
+    "usage": "/journal",
+    "description": "Open the OrbitFS control panel on Journal."
   },
   {
     "category": "Startup and context",
@@ -33,36 +45,84 @@
     "category": "Startup and context",
     "command": "/loadfile",
     "usage": "/loadfile <filepath>",
-    "description": "Load one complete text or DOCX file into active context."
+    "description": "Fully load one complete text or DOCX file into active context."
   },
   {
-    "category": "Files",
+    "category": "Files and folders",
+    "command": "/list",
+    "usage": "/list [subpath]",
+    "description": "List files and folders at the root or inside a folder."
+  },
+  {
+    "category": "Files and folders",
     "command": "/viewfile",
     "usage": "/viewfile <filepath>",
-    "description": "Open a PDF, DOCX or text file in the OrbitFS viewer."
+    "description": "Open a PDF, DOCX or text file in the expandable OrbitFS viewer."
   },
   {
-    "category": "Files",
+    "category": "Files and folders",
+    "command": "/search",
+    "usage": "/search <query> [subpath]",
+    "description": "Search file contents, optionally inside one folder."
+  },
+  {
+    "category": "Files and folders",
+    "command": "/stat",
+    "usage": "/stat <filepath>",
+    "description": "Show file size, modified time and SHA-256 hash."
+  },
+  {
+    "category": "Files and folders",
     "command": "/openfileweb",
     "usage": "/openfileweb <filepath>",
-    "description": "Create a temporary browser link for a file."
+    "description": "Create a browser link for a file that expires after 15 minutes."
+  },
+  {
+    "category": "Files and folders",
+    "command": "/move",
+    "usage": "/move <source> <destination_folder> [new_name]",
+    "description": "Resolve and preview a move before the exact paths are confirmed."
+  },
+  {
+    "category": "Files and folders",
+    "command": "/mkdir",
+    "usage": "/mkdir <subpath>",
+    "description": "Create a new folder at the supplied relative path."
+  },
+  {
+    "category": "Files and folders",
+    "command": "/trash",
+    "usage": "/trash <filepath>",
+    "description": "Move a file or folder into _trash instead of hard deleting it."
+  },
+  {
+    "category": "Files and folders",
+    "command": "/emptybin",
+    "usage": "/emptybin",
+    "description": "Permanently empty _trash after listing and explicit confirmation."
+  },
+  {
+    "category": "Vent mode",
+    "command": "/ventmode",
+    "usage": "/ventmode <on|off>",
+    "description": "Turn Pure Private Vent Mode on or off."
+  },
+  {
+    "category": "Vent mode",
+    "command": "/styleentry",
+    "usage": "/styleentry <text> <title> [entry_date]",
+    "description": "Save the final Vent draft before upload."
+  },
+  {
+    "category": "Vent mode",
+    "command": "/uploadvent",
+    "usage": "/uploadvent",
+    "description": "Upload the exact saved Vent draft without another confirmation."
   },
   {
     "category": "System",
     "command": "/server-status",
     "usage": "/server-status",
-    "description": "Return the live OrbitFS panel, MCP and connection status."
-  },
-  {
-    "category": "Modes",
-    "command": "/vent",
-    "usage": "/vent",
-    "description": "Open the OrbitFS control panel on Vent."
-  },
-  {
-    "category": "Modes",
-    "command": "/journal",
-    "usage": "/journal",
-    "description": "Open the OrbitFS control panel on Journal."
+    "description": "Return the live OrbitFS panel, MCP, cloud and connection status."
   }
 ]
