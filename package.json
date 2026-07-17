@@ -4,8 +4,9 @@
   "description": "The OrbitFS ChatGPT app and OrbitFS MCP server",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --check server.js && node --check server-core.js && node --check license.js && node test-license.mjs"
+    "enforce:startup": "node scripts/enforce-full-startup.mjs",
+    "start": "node scripts/enforce-full-startup.mjs && node server.js",
+    "test": "node scripts/enforce-full-startup.mjs && node --check server.js && node --check server-core.js && node --check license.js && node test-license.mjs"
   },
   "keywords": [
     "chatgpt-app",
