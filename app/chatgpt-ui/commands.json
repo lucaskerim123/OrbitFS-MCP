@@ -3,7 +3,7 @@
     "category": "UI",
     "command": "/orbithelp",
     "usage": "/orbithelp",
-    "description": "Open the separate OrbitFS command help window."
+    "description": "Open the OrbitFS command help window."
   },
   {
     "category": "UI",
@@ -13,39 +13,21 @@
   },
   {
     "category": "UI",
-    "command": "/context",
-    "usage": "/context",
-    "description": "Open the main OrbitFS control panel on Context."
-  },
-  {
-    "category": "UI",
     "command": "/files",
     "usage": "/files",
-    "description": "Open the main OrbitFS control panel on Files."
+    "description": "Open the OrbitFS control panel on Files."
   },
   {
     "category": "UI",
-    "command": "/vent",
-    "usage": "/vent",
-    "description": "Open the main OrbitFS control panel on Vent."
-  },
-  {
-    "category": "UI",
-    "command": "/journal",
-    "usage": "/journal",
-    "description": "Open the main OrbitFS control panel on Journal."
-  },
-  {
-    "category": "System",
-    "command": "/server-status",
-    "usage": "/server-status",
-    "description": "Return the live OrbitFS server, panel, cloud and Sorter status."
+    "command": "/context",
+    "usage": "/context",
+    "description": "Open the OrbitFS control panel on Context."
   },
   {
     "category": "Startup and context",
     "command": "/startup",
-    "usage": "/startup [project] [loadstrength]",
-    "description": "Open the startup chooser, or load 1. Legal / 2. Wellbeing using low, medium, high, custom1 or custom2."
+    "usage": "/startup",
+    "description": "Open the Startup UI to choose the project and load strength."
   },
   {
     "category": "Startup and context",
@@ -55,86 +37,32 @@
   },
   {
     "category": "Files",
-    "command": "/list",
-    "usage": "/list [subpath]",
-    "description": "List files and folders at the root or inside a folder."
-  },
-  {
-    "category": "Files",
-    "command": "/read",
-    "usage": "/read <filepath>",
-    "description": "Read a text file by its OrbitFS-relative path."
-  },
-  {
-    "category": "Files",
     "command": "/viewfile",
     "usage": "/viewfile <filepath>",
-    "description": "Open a PDF, DOCX or text file in the expandable viewer."
-  },
-  {
-    "category": "Files",
-    "command": "/previewfile",
-    "usage": "/previewfile <filepath>",
-    "description": "Open a compact preview of a PDF, DOCX or text file."
-  },
-  {
-    "category": "Files",
-    "command": "/search",
-    "usage": "/search <query> [subpath]",
-    "description": "Search text content, optionally inside one folder."
-  },
-  {
-    "category": "Files",
-    "command": "/stat",
-    "usage": "/stat <filepath>",
-    "description": "Show file size, modified time and SHA-256 hash."
+    "description": "Open a PDF, DOCX or text file in the OrbitFS viewer."
   },
   {
     "category": "Files",
     "command": "/openfileweb",
     "usage": "/openfileweb <filepath>",
-    "description": "Create a browser link for a file. The link expires after 15 minutes."
+    "description": "Create a temporary browser link for a file."
   },
   {
-    "category": "Files",
-    "command": "/move",
-    "usage": "/move <source> <destination_folder> [new_name]",
-    "description": "Resolve and preview a move. The exact paths must be confirmed before execution."
+    "category": "System",
+    "command": "/server-status",
+    "usage": "/server-status",
+    "description": "Return the live OrbitFS panel, MCP and connection status."
   },
   {
-    "category": "Files",
-    "command": "/mkdir",
-    "usage": "/mkdir <subpath>",
-    "description": "Create a new folder at the supplied relative path."
+    "category": "Modes",
+    "command": "/vent",
+    "usage": "/vent",
+    "description": "Open the OrbitFS control panel on Vent."
   },
   {
-    "category": "Files",
-    "command": "/trash",
-    "usage": "/trash <filepath>",
-    "description": "Move a file or folder into _trash instead of hard deleting it."
-  },
-  {
-    "category": "Files",
-    "command": "/emptybin",
-    "usage": "/emptybin",
-    "description": "Permanently empty _trash after listing and explicit confirmation."
-  },
-  {
-    "category": "Vent",
-    "command": "/ventmode",
-    "usage": "/ventmode <on|off>",
-    "description": "Turn Pure Private Vent Mode on or off."
-  },
-  {
-    "category": "Vent",
-    "command": "/styleentry",
-    "usage": "/styleentry <text> <title> [entry_date]",
-    "description": "Save the final Vent draft. Entry date uses DD-MM-YYYY when provided."
-  },
-  {
-    "category": "Vent",
-    "command": "/uploadvent",
-    "usage": "/uploadvent",
-    "description": "Upload the exact saved Vent draft without another confirmation."
+    "category": "Modes",
+    "command": "/journal",
+    "usage": "/journal",
+    "description": "Open the OrbitFS control panel on Journal."
   }
 ]
