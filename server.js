@@ -6,6 +6,7 @@ import mammoth from "mammoth";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { buildLoadManifestEntry, summarizeLoadManifest } from "./load-manifest.js";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = process.env.HIVE_ROOT;
@@ -201,13 +202,13 @@ const DEFAULT_CONFIG = {
     "2. Wellbeing": { low: [], medium: [], high: [], custom1: [], custom2: [] },
   },
   levels: {
-    low: { maxFiles: 20, maxCharacters: 120000, perFileCharacters: 40000 },
-    medium: { maxFiles: 50, maxCharacters: 350000, perFileCharacters: 60000 },
-    high: { maxFiles: 120, maxCharacters: 900000, perFileCharacters: 100000 },
-    custom1: { maxFiles: 180, maxCharacters: 1400000, perFileCharacters: 140000 },
-    custom2: { maxFiles: 260, maxCharacters: 2200000, perFileCharacters: 180000 },
-    custom: { maxFiles: 260, maxCharacters: 2200000, perFileCharacters: 180000 },
-    mega: { maxFiles: 10000, maxCharacters: 12000000, perFileCharacters: 1000000 },
+    low: { maxFiles: 30, maxCharacters: 250000, perFileCharacters: 100000 },
+    medium: { maxFiles: 80, maxCharacters: 1000000, perFileCharacters: 250000 },
+    high: { maxFiles: 200, maxCharacters: 3000000, perFileCharacters: 750000 },
+    custom1: { maxFiles: 350, maxCharacters: 6000000, perFileCharacters: 1000000 },
+    custom2: { maxFiles: 600, maxCharacters: 10000000, perFileCharacters: 1500000 },
+    custom: { maxFiles: 600, maxCharacters: 10000000, perFileCharacters: 1500000 },
+    mega: { maxFiles: 10000, maxCharacters: 20000000, perFileCharacters: 2000000 },
   },
 };
 
@@ -261,29 +262,34 @@ function isBackgroundUiPath(filepath = "") {
 
 function contextStructured(authContext, extra = {}) {
   const files = contextArray(authContext).filter((file) => !isBackgroundUiPath(file.path));
+  const manifestSummary = summarizeLoadManifest(files);
   return {
     mode: "active",
     activeFiles: files,
     activeFileCount: files.length,
-    totalCharactersLoaded: files.reduce((sum, file) => sum + Number(file.characters || 0), 0),
+    totalCharactersLoaded: manifestSummary.charactersLoaded,
+    totalCharactersAvailable: manifestSummary.totalCharacters,
+    fullyLoadedCount: manifestSummary.fullyLoadedCount,
+    partiallyLoadedCount: manifestSummary.partiallyLoadedCount,
+    referenceOnlyCount: manifestSummary.referenceOnlyCount,
+    failedCount: manifestSummary.failedCount,
     ...extra,
   };
 }
 
-function trackFile(authContext, filepath, characters, source = "manual", truncated = false, pinned = false) {
+function trackFile(authContext, filepathOrEntry, characters, source = "manual", truncated = false, pinned = false) {
   const activeContext = getActiveContext(authContext);
-  const key = normalize(filepath);
-  const now = Date.now();
-  activeContext.set(key, {
-    path: key,
-    characters: Number(characters || 0),
-    source,
-    truncated: !!truncated,
-    pinned: !!pinned,
-    loadedAt: new Date(now).toISOString(),
-    lastAccessedAt: new Date(now).toISOString(),
-    expiresAt: null,
-  });
+  const entryInput = typeof filepathOrEntry === "object" && filepathOrEntry !== null
+    ? filepathOrEntry
+    : { filepath: filepathOrEntry, charactersLoaded: characters, totalCharacters: characters, source, truncated, pinned };
+  const entry = buildLoadManifestEntry(entryInput);
+  const key = normalize(entry.path);
+  const existing = activeContext.get(key);
+  if (existing?.pinned && !entry.pinned) entry.pinned = true;
+  if (existing?.loadedAt && existing.path === key && existing.status === entry.status && existing.charactersLoaded === entry.charactersLoaded) {
+    entry.loadedAt = existing.loadedAt;
+  }
+  activeContext.set(key, { ...entry, path: key });
 }
 
 function visibleStartupResult(authContext, text, project, loadstrength) {
@@ -297,7 +303,7 @@ function visibleStartupResult(authContext, text, project, loadstrength) {
     const tail = section.slice(section.indexOf(`===== ${filepath} =====`) + filepath.length + 12);
     const next = tail.indexOf("\n=====");
     const body = next >= 0 ? tail.slice(0, next) : tail;
-    trackFile(authContext, filepath, body.length, "startup", body.includes("startup copy truncated"));
+    trackFile(authContext, { filepath, charactersLoaded: body.length, totalCharacters: body.length, source: "startup", truncated: body.includes("startup copy truncated"), warnings: body.includes("startup copy truncated") ? ["startup copy truncated"] : [] });
   }
   const projects = String(project || "Master").split(":").map((value) => value.trim()).filter(Boolean);
   return contextStructured(authContext, {
@@ -554,7 +560,7 @@ async function runOrbitStartup(authContext, { project, loadstrength, mega = fals
     try {
       const content = await readableStartupText(filepath);
       loaded.push({ filepath, content, characters: content.length, truncated: false, mandatory: true });
-      trackFile(authContext, filepath, content.length, "startup-default", false, false);
+      trackFile(authContext, { filepath, charactersLoaded: content.length, totalCharacters: content.length, source: "startup-default", truncated: false, pinned: true });
     } catch (error) {
       failed.push({ filepath, error: error.message, mandatory: true });
     }
@@ -576,7 +582,7 @@ async function runOrbitStartup(authContext, { project, loadstrength, mega = fals
       const content = full.slice(0, Math.min(limits.perFileCharacters, room));
       optionalTotal += content.length;
       loaded.push({ filepath, content, characters: full.length, truncated: content.length < full.length, mandatory: false });
-      trackFile(authContext, filepath, content.length, mega ? "mega" : "startup", content.length < full.length);
+      trackFile(authContext, { filepath, charactersLoaded: content.length, totalCharacters: full.length, source: mega ? "mega" : "startup", truncated: content.length < full.length, pinned: false, warnings: content.length < full.length ? ["startup copy truncated by selected load-strength limits"] : [] });
     } catch (error) {
       failed.push({ filepath, error: error.message, mandatory: false });
     }
@@ -873,7 +879,7 @@ function registerExtraTools(server, authContext) {
     for (const filepath of paths) {
       try {
         const data = await readProfile(filepath);
-        trackFile(authContext, filepath, data.length, "profiles", false);
+        trackFile(authContext, { filepath, charactersLoaded: data.length, totalCharacters: data.length, source: "profiles", truncated: false });
         blocks.push(`===== ${filepath} =====\n${data}`);
       } catch (error) {
         blocks.push(`===== ${filepath} =====\n(unavailable: ${error.message})`);
@@ -897,7 +903,7 @@ McpServer.prototype.tool = function patchedTool(name, description, schema, handl
     const wrappedLoadFile = async (args) => {
       const result = await handler(args);
       const text = (result?.content || []).map((item) => item?.text || "").join("\n");
-      trackFile(this.authContext, args.filepath, text.length, "manual", false);
+      trackFile(this.authContext, { filepath: args.filepath, charactersLoaded: text.length, totalCharacters: text.length, source: "manual", truncated: false });
       return result;
     };
     if (isChatGptWidgetCallable(this.authContext, name)) {

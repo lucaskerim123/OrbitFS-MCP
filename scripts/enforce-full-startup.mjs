@@ -41,7 +41,17 @@ function isMandatoryStartupFile(filepath) {
   return HARD_CODED_FULL_STARTUP_FILES.has(startupBasename(filepath));
 }`;
 
+const hasCurrentMandatoryPolicy = source.includes("function isMandatoryStartupFile(filepath)")
+  && source.includes("0. core/master logs/")
+  && source.includes("master profiles")
+  && source.includes("luke")
+  && source.includes("laura");
+
 if (!source.includes(oldMandatory)) {
+  if (hasCurrentMandatoryPolicy) {
+    process.stdout.write("Mandatory startup-file policy already present.\n");
+    process.exit(0);
+  }
   throw new Error("Could not find the mandatory startup-file policy block. Refusing to patch an unknown server version.");
 }
 source = source.replace(oldMandatory, newMandatory);
