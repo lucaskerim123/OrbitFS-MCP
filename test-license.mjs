@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { issueEntitlement } from "../../OrbitFS-License-API/src/entitlements.js";
 
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "orbitfs-license-test-"));
 let responseMode = "valid";
@@ -17,18 +18,21 @@ const server = http.createServer(async (req, res) => {
     reason: responseMode === "valid" ? null : "not_found",
   }]));
   res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({
+  const validation = {
     valid: responseMode === "valid",
     reason: responseMode === "valid" ? null : "not_found",
     label: "Local Test",
     installationId: input.installationId,
     components,
-  }));
+  };
+  res.end(JSON.stringify({ ...validation, ...issueEntitlement(validation) }));
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const port = server.address().port;
 
-process.env.ORBITFS_LICENSE_ENFORCE = "true";
+process.env.NODE_ENV = "production";
+process.env.ENTITLEMENT_PRIVATE_KEY_PATH = "F:/OrbitFS-License-API/secrets/entitlement-private.pem";
+process.env.ORBITFS_ENTITLEMENT_PUBLIC_KEY_PATH = "F:/OrbitFS-License-API/secrets/entitlement-public.pem";
 process.env.ORBITFS_LICENSE_API_URL = `http://127.0.0.1:${port}`;
 process.env.ORBITFS_LICENSE_DIR = tempDir;
 process.env.ORBITFS_LICENSE_REFRESH_MINUTES = "1";
